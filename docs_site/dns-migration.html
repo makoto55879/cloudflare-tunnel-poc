@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DNS 移管手順書（Squarespace → Cloudflare） | PoC ナレッジサイト</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <div class="layout">
+    <nav class="sidebar">
+      <div class="site-title">PoC ナレッジサイト</div>
+      <p class="project-name">Raspberry Pi 5 × Cloudflare Tunnel PoC</p>
+        <div class="nav-section-label">概要</div>
+        <ul>
+          <li><a href="index.html">トップ</a></li>
+        </ul>
+        <div class="nav-section-label">レポート・設計</div>
+        <ul>
+          <li><a href="poc-report.html">PoC 結果レポート（Phase 1）</a></li>
+          <li><a href="design-phase1-4.html">基本・詳細設計書（Phase 1-4）</a></li>
+        </ul>
+        <div class="nav-section-label">ナレッジ資料</div>
+        <ul>
+          <li><a href="knowledge-phase1-4.html">Phase 1-4 ナレッジ</a></li>
+          <li><a href="robustness.html">堅牢性強化システム構成案</a></li>
+        </ul>
+        <div class="nav-section-label">インフラ・運用</div>
+        <ul>
+          <li><a href="network-routes.html">システム通信経路一覧と図解</a></li>
+          <li><a href="dns-migration.html" class="active">DNS 移管手順書</a></li>
+        </ul>
+        <div class="nav-section-label">ログ</div>
+        <ul>
+          <li><a href="dev-log.html">開発ログ</a></li>
+        </ul>
+    </nav>
+    <main class="content">
+      <div class="doc-meta">版数: 1.0 &nbsp;|&nbsp; 更新日: 2026-05-04</div>
+      <h1 class="page-title">DNS 移管手順書（Squarespace → Cloudflare）</h1>
+      <div class="related-links">
+        <strong>関連資料</strong>
+        <a href="knowledge-phase1-4.html">Phase 1-4 ナレッジ</a> &nbsp;|&nbsp; <a href="design-phase1-4.html">基本・詳細設計書（Phase 1-4）</a>
+      </div>
+
+      <h1 id="squarespacecloudflaredns">SquarespaceからCloudflareへのDNS移管手順書</h1>
+<p>本ドキュメントは、Squarespaceで取得・管理しているドメインのDNS管理をCloudflareに移行し、Cloudflare Tunnel（Named Tunnel）のPublic Hostname機能を利用可能にするための手順をまとめたものです。</p>
+<h2 id="1">1. 移管の目的と背景</h2>
+<p>Cloudflare Tunnel（Named Tunnel）でカスタムドメイン（例: <code>api.your-domain.com</code>）を使用するためには、Cloudflare側で「どのドメインへのリクエストをどのTunnelに流すか」というルーティング設定（Public Hostname設定）が必要です。</p>
+<p>しかし、ドメインがCloudflare管理外（Squarespace管理など）の場合、Cloudflareのダッシュボード上でドメインを選択できず、設定が完了しません。これを解決するため、<strong>ドメインの所有権はSquarespaceに残したまま、DNSの管理権限のみをCloudflareに移行（Connect a domain）</strong>します。</p>
+<h3 id="5">ドメイン管理の5層モデルと今回の変更範囲</h3>
+<pre><code class="language-text">┌─────────────────────────────────────────────────────────────┐
+│  Layer 5: アプリケーション層                                  │
+│  「ブラウザが api.your-domain.com を入力する」               │
+├─────────────────────────────────────────────────────────────┤
+│  Layer 4: DNS解決層                                           │
+│  「api.your-domain.com のIPアドレスは？」                    │
+├─────────────────────────────────────────────────────────────┤
+│  Layer 3: DNS管理層（ネームサーバー）                         │
+│  「このドメインの案内所はここです」                           │
+│  ★変更前: Google Cloud DNS (ns-cloud-b1.googledomains.com)   │
+│  ★変更後: Cloudflare (xxxx.ns.cloudflare.com)              │ ← 今回ここを変更！
+├─────────────────────────────────────────────────────────────┤
+│  Layer 2: ドメイン登録層（レジストラ）                        │
+│  「ドメインの所有権・契約管理」                               │
+│  ★Squarespaceのまま（変更なし）                              │
+├─────────────────────────────────────────────────────────────┤
+│  Layer 1: ルートDNS層                                         │
+│  「.com の管理」                                              │
+└─────────────────────────────────────────────────────────────┘
+</code></pre>
+<h2 id="2-dns">2. 事前準備：現在のDNSレコードの確認</h2>
+<p>DNS管理を移行する際、既存のDNSレコード（ウェブサイトの表示やメールの送受信に必要な設定）が正しく引き継がれないと、サービスに影響が出ます。移行前に現在のレコードを確認します。</p>
+<p>Windows PowerShellで以下のコマンドを実行し、現在の設定を控えておきます。</p>
+<pre><code class="language-powershell"># MXレコード（メール受信）
+Resolve-DnsName -Name &quot;your-domain.com&quot; -Type MX
+
+# TXTレコード（SPF/DKIM等）
+Resolve-DnsName -Name &quot;your-domain.com&quot; -Type TXT
+
+# Aレコード（ウェブサイト）
+Resolve-DnsName -Name &quot;your-domain.com&quot; -Type A
+
+# CNAMEレコード（www等）
+Resolve-DnsName -Name &quot;www.your-domain.com&quot; -Type CNAME
+</code></pre>
+<h2 id="3">3. 移行手順</h2>
+<h3 id="step-1-cloudflareconnect-a-domain">Step 1: Cloudflareへのサイト追加（Connect a domain）</h3>
+<ol>
+<li>Cloudflareダッシュボードにログインし、左メニューから「<strong>Add a site</strong>」をクリックします。</li>
+<li>3つの選択肢が表示されます。ここでは必ず <strong>「Connect a domain」</strong> を選択します。<br>
+   - ⚠️ <strong>注意</strong>: 「Transfer a domain」はドメインの所有権ごと移管する手続きであり、今回は使用しません。</li>
+</ol>
+<p><img alt="Connect a domainの選択" src="[removed]"></p>
+<ol start="3">
+<li>ドメイン名（例: <code>your-domain.com</code>）を入力し、「Continue」をクリックします。</li>
+</ol>
+<p><img alt="ドメイン名の入力" src="[removed]"></p>
+<ol start="4">
+<li>プラン選択画面が表示されます。一番下までスクロールし、<strong>「Free」</strong> プランを選択して「Continue」をクリックします。</li>
+</ol>
+<p><img alt="Freeプランの選択" src="[removed]"></p>
+<h3 id="step-2-dns">Step 2: DNSレコードの自動スキャンと確認</h3>
+<p>Cloudflareが現在のDNSレコードを自動的にスキャンし、一覧を表示します。</p>
+<ol>
+<li>スキャンされたレコード一覧を確認し、事前準備で確認したレコード（A、CNAME、TXTなど）が含まれているかチェックします。</li>
+<li><strong>重要</strong>: 今回のPoCで事前に追加していた <code>Tunnel api</code> のレコード（値が <code>[object Object]</code> となっているもの）がある場合は、後で正しい手順で設定し直すため、この画面で <strong>「Delete」</strong> をクリックして削除します。</li>
+<li>確認と削除が終わったら、「Continue to activation」をクリックします。</li>
+</ol>
+<p><img alt="DNSレコードの確認" src="assets/img/dns-records-masked.png" style="max-width:100%;border:1px solid #e1e4e8;border-radius:6px;"></p>
+<h3 id="step-3-ns">Step 3: ネームサーバー（NS）の変更</h3>
+<p>Cloudflareから、新しく設定すべき2つのネームサーバー（例: <code>xxxx.ns.cloudflare.com</code>, <code>yyyy.ns.cloudflare.com</code>）が提示されます。</p>
+<p><img alt="ネームサーバーの指示" src="assets/img/nameservers-masked.png" style="max-width:100%;border:1px solid #e1e4e8;border-radius:6px;"></p>
+<ol>
+<li>別のブラウザタブで <strong>Squarespaceの管理画面</strong> にログインします。</li>
+<li>「Domains」→ 対象ドメイン → 「DNS Settings」または「Nameservers」を開きます。</li>
+<li><strong>「カスタムネームサーバーを使用する」</strong> を選択し、Cloudflareから指示された2つのネームサーバーを入力して保存します。</li>
+</ol>
+<p><img alt="SquarespaceでのNS変更" src="[removed]"></p>
+<ol start="4">
+<li>Cloudflareの画面に戻り、<strong>「I updated my nameservers」</strong> をクリックします。</li>
+</ol>
+<h3 id="step-4">Step 4: 伝播の待機と完了確認</h3>
+<p>ネームサーバーの変更がインターネット全体に伝播するまで待機します（通常数分〜数時間）。</p>
+<p><img alt="伝播待機画面" src="assets/img/dashboard-waiting-masked.png" style="max-width:100%;border:1px solid #e1e4e8;border-radius:6px;"></p>
+<p>Cloudflareダッシュボードでステータスが <strong>「Active」</strong> に変わり、「Your domain is now protected by Cloudflare」と表示されれば、DNS移行は完了です。</p>
+<p><img alt="移行完了画面" src="assets/img/dashboard-protected-masked.png" style="max-width:100%;border:1px solid #e1e4e8;border-radius:6px;"></p>
+<h2 id="4-public-hostname">4. 事後作業：Public Hostnameの設定</h2>
+<p>DNS管理がCloudflareに移ったことで、Cloudflare TunnelのPublic Hostname設定が可能になります。</p>
+<ol>
+<li>Cloudflare Zero Trustダッシュボード → 「Networks」→「Tunnels」を開きます。</li>
+<li>対象のTunnel（<code>your-tunnel-name</code>）を選択し、「Routes」タブ → 「Add route」→「Published application」をクリックします。</li>
+<li>以下の通り設定します。<br>
+   - <strong>Subdomain</strong>: <code>api</code><br>
+   - <strong>Domain</strong>: <code>your-domain.com</code> （ドロップダウンから選択可能になっています）<br>
+   - <strong>Service Type</strong>: <code>HTTP</code><br>
+   - <strong>URL</strong>: <code>api:8000</code> （※エラーが出る場合は <code>http://api:8000</code> と入力）</li>
+<li>「Add route」をクリックして保存します。</li>
+</ol>
+<p><img alt="Public Hostname設定" src="[removed]"></p>
+<p>最後に、ブラウザから <code>https://api.your-domain.com/ping</code> にアクセスし、意図したレスポンス（例: <code>{"message":"pong"}</code>）が返ってくることを確認します。</p>
+<p><img alt="疎通確認" src="[removed]"></p>
+<p>以上で手順は完了です。</p>
+    </main>
+  </div>
+</body>
+</html>

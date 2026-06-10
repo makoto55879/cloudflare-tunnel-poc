@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Phase 1-4 ナレッジ | PoC ナレッジサイト</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <div class="layout">
+    <nav class="sidebar">
+      <div class="site-title">PoC ナレッジサイト</div>
+      <p class="project-name">Raspberry Pi 5 × Cloudflare Tunnel PoC</p>
+        <div class="nav-section-label">概要</div>
+        <ul>
+          <li><a href="index.html">トップ</a></li>
+        </ul>
+        <div class="nav-section-label">レポート・設計</div>
+        <ul>
+          <li><a href="poc-report.html">PoC 結果レポート（Phase 1）</a></li>
+          <li><a href="design-phase1-4.html">基本・詳細設計書（Phase 1-4）</a></li>
+        </ul>
+        <div class="nav-section-label">ナレッジ資料</div>
+        <ul>
+          <li><a href="knowledge-phase1-4.html" class="active">Phase 1-4 ナレッジ</a></li>
+          <li><a href="robustness.html">堅牢性強化システム構成案</a></li>
+        </ul>
+        <div class="nav-section-label">インフラ・運用</div>
+        <ul>
+          <li><a href="network-routes.html">システム通信経路一覧と図解</a></li>
+          <li><a href="dns-migration.html">DNS 移管手順書</a></li>
+        </ul>
+        <div class="nav-section-label">ログ</div>
+        <ul>
+          <li><a href="dev-log.html">開発ログ</a></li>
+        </ul>
+    </nav>
+    <main class="content">
+      <div class="doc-meta">版数: 1.1 &nbsp;|&nbsp; 更新日: 2026-06-09 &nbsp;|&nbsp; 対象: Phase 1-4（Named Tunnel + DNS 移管）</div>
+      <h1 class="page-title">Phase 1-4 ナレッジ</h1>
+
+      <div class="related-links">
+        <strong>関連資料</strong>
+        <a href="design-phase1-4.html">基本・詳細設計書（Phase 1-4）</a> &nbsp;|&nbsp;
+        <a href="dns-migration.html">DNS 移管手順書</a> &nbsp;|&nbsp;
+        <a href="network-routes.html">システム通信経路一覧と図解</a> &nbsp;|&nbsp;
+        <a href="dev-log.html">開発ログ</a>
+      </div>
+
+      <p>
+        Phase 1-4（Named Tunnel + DNS 移管）を進める過程で発生した<strong>疑問・エラー・判断</strong>を、後から読んでも再現できるよう丁寧に残した資料です。
+      </p>
+      <p>
+        <a href="dev-log.html">開発ログ</a>は「いつ・何を実行したか」の時系列。本ページは「なぜそうなったか」「どう調べて・何を直して解消したか」を中心に記述します。
+      </p>
+
+      <h2>この資料の読み方</h2>
+      <table class="guide-table">
+        <thead>
+          <tr><th>見出し</th><th>意味</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>きっかけ</strong></td><td>質問が生まれた背景、またはエラーに気づいた状況</td></tr>
+          <tr><td><strong>経緯</strong></td><td>試したこと・判明したこと・次に何をしたか（解決までの流れ）</td></tr>
+          <tr><td><strong>結論</strong></td><td>最終的な理解・正しい操作・再発防止</td></tr>
+          <tr><td><strong>Tips</strong></td><td>現場のインフラ担当が伝えそうな助言（第3者視点）</td></tr>
+        </tbody>
+      </table>
+
+      <h2>目次</h2>
+      <table class="knowledge-toc">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>テーマ</th>
+            <th>種別</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="k-id"><a href="#K-01">K-01</a></td>
+            <td>Named Tunnel と Quick Tunnel の違い</td>
+            <td><span class="k-type k-type-design">設計理解</span></td>
+          </tr>
+          <tr>
+            <td class="k-id"><a href="#K-02">K-02</a></td>
+            <td><code>--token</code> と <code>--url</code> の競合によるタイムアウト</td>
+            <td><span class="k-type k-type-error">エラー解消</span></td>
+          </tr>
+          <tr>
+            <td class="k-id"><a href="#K-03">K-03</a></td>
+            <td>ドメイン管理の5層モデル（所有権 vs DNS 管理）</td>
+            <td><span class="k-type k-type-design">設計理解</span></td>
+          </tr>
+          <tr>
+            <td class="k-id"><a href="#K-04">K-04</a></td>
+            <td>「ドメイン移管」と「DNS 管理移行」の違い</td>
+            <td><span class="k-type k-type-design">設計理解</span></td>
+          </tr>
+          <tr>
+            <td class="k-id"><a href="#K-05">K-05</a></td>
+            <td>DNS 移行前のリスク評価（Google Workspace への影響）</td>
+            <td><span class="k-type k-type-ops">運用</span></td>
+          </tr>
+          <tr>
+            <td class="k-id"><a href="#K-06">K-06</a></td>
+            <td>Public Hostname 設定が必要な理由</td>
+            <td><span class="k-type k-type-design">設計理解</span></td>
+          </tr>
+          <tr>
+            <td class="k-id"><a href="#K-07">K-07</a></td>
+            <td>修正後のデータ転送フロー全体像</td>
+            <td><span class="k-type k-type-summary">まとめ</span></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- K-01 -->
+      <div class="knowledge-card" id="K-01">
+        <h3>K-01 &nbsp; Named Tunnel と Quick Tunnel の違い</h3>
+
+        <div class="k-section">
+          <span class="k-section-label label-trigger">きっかけ</span>
+          <p>Phase 1-2 では Quick Tunnel（<code>--url</code>）で外部公開できた。Phase 1-4 で Named Tunnel（<code>--token</code>）に切り替えた理由が分からなかった。</p>
+        </div>
+
+        <div class="k-section">
+          <span class="k-section-label">経緯</span>
+          <p>Quick Tunnel はコンテナ再起動のたびに URL が変わる仕様（例: <code>occur-thompson-theorem-bracket.trycloudflare.com</code>）。継続的なテストや本番運用には URL が固定されている Named Tunnel が必要と判明。Named Tunnel は Cloudflare ダッシュボードで事前に作成し、トークンで認証する方式。</p>
+        </div>
+
+        <div class="k-section">
+          <span class="k-section-label label-result">結論</span>
+          <p>
+            <strong>Quick Tunnel</strong>: URL が毎回変わる。PoC 初期の「繋がるか確認する」用途に最適。設定不要で即使える。<br>
+            <strong>Named Tunnel</strong>: URL 固定。本番用ドメインへの紐付け・継続テストに必須。事前にダッシュボードでトンネル作成が必要。
+          </p>
+        </div>
+
+        <div class="k-section">
+          <span class="k-section-label label-expert">Tips</span>
+          <p>「Quick Tunnel は開発者の動作確認ツール。本番に使うものではない。Named Tunnel を使うなら、ダッシュボードでの設定が必ず必要になる。この2つを混同すると後でハマる。」</p>
+        </div>
+      </div>
+
+      <!-- K-02 -->
+      <div class="knowledge-card" id="K-02">
+        <h3>K-02 &nbsp; <code>--token</code> と <code>--url</code> の競合によるタイムアウト</h3>
+
+        <div class="k-section">
+          <span class="k-section-label label-trigger">きっかけ</span>
+          <p><code>https://api.your-domain.com/ping</code> にアクセスすると <code>ERR_CONNECTION_TIMED_OUT</code> が発生。DNS 解決（CNAME）は正常で、Tunnel 接続も確立されているのにリクエストが届かない。</p>
+        </div>
+
+        <div class="k-section">
+          <span class="k-section-label label-cause">原因</span>
+          <p><code>docker-compose.yml</code> の <code>cloudflared</code> 起動コマンドに <code>--token</code>（Named Tunnel 用）と <code>--url</code>（Quick Tunnel 用）を<strong>同時に指定</strong>していた。Named Tunnel では転送先は Cloudflare ダッシュボードの「Public Hostname」設定で決まるため、<code>--url</code> は無視される。結果として転送先が未定義のままタイムアウトとなった。</p>
+          <pre><code># 誤った設定例
+command: tunnel --no-autoupdate run --token &lt;TOKEN&gt; --url http://api:8000</code></pre>
+        </div>
+
+        <div class="k-section">
+          <span class="k-section-label label-result">結論</span>
+          <p><code>--url</code> を削除し、転送先は Cloudflare ダッシュボードの Public Hostname 設定で行う。</p>
+          <pre><code># 正しい設定例
+command: tunnel --no-autoupdate run --token &lt;TOKEN&gt;</code></pre>
+        </div>
+
+        <div class="k-section">
+          <span class="k-section-label label-expert">Tips</span>
+          <p>「Named Tunnel の <code>--token</code> を使う場合、ingress（転送先）の設定はダッシュボード側で完結している。<code>--url</code> を追加しても効かないどころか、混乱の元になる。コマンドはシンプルに保つのが鉄則。」</p>
+        </div>
+      </div>
+
+      <!-- K-03 -->
+      <div class="knowledge-card" id="K-03">
+        <h3>K-03 &nbsp; ドメイン管理の5層モデル（所有権 vs DNS 管理）</h3>
+
+        <div class="k-section">
+          <span class="k-section-label label-trigger">きっかけ</span>
+          <p>Cloudflare ダッシュボードで Public Hostname を設定しようとしたが、ドメイン（<code>your-domain.com</code>）が選択肢に出てこなかった。Cloudflare アカウントは持っているのに、なぜ使えないのか分からなかった。</p>
+        </div>
+
+        <div class="k-section">
+          <span class="k-section-label">経緯</span>
+          <p>調査の結果、Named Tunnel の Public Hostname 機能は「対象ドメインが Cloudflare の DNS ゾーンで管理されている」場合のみ利用可能と判明。当時はドメインの所有権も DNS 管理も Squarespace（実体は Google Cloud DNS）にあったため、Cloudflare からは「管理外のドメイン」として扱われていた。</p>
+        </div>
+
+        <div class="k-section">
+          <span class="k-section-label label-result">結論</span>
+          <p>ドメインには「所有権（レジストラ）」と「DNS 管理（ネームサーバー）」の2つの概念がある。Cloudflare の機能を使うには DNS 管理を Cloudflare に移す必要がある。</p>
+          <pre><code>Layer 5: アプリケーション層  ← ブラウザが URL を入力する
+Layer 4: DNS 解決層         ← 名前を IP アドレスに変換する
+Layer 3: DNS 管理層         ← DNSレコードを誰が管理するか（ネームサーバー）★今回の問題
+Layer 2: ドメイン登録層     ← ドメイン名の所有権を誰が持つか（レジストラ）
+Layer 1: ルート DNS 層      ← .com / .jp 等を管理するインターネットの根幹</code></pre>
+        </div>
+
+        <div class="k-section">
+          <span class="k-section-label label-expert">Tips</span>
+          <p>「ドメインを『買った』だけでは Cloudflare の機能は使えない。DNS を Cloudflare に向ける（NS レコードを変更する）ことが必須。この区別を知らないと、設定画面でドメインが出てこない理由が永遠に分からない。」</p>
+        </div>
+      </div>
+
+      <!-- K-04 -->
+      <div class="knowledge-card" id="K-04">
+        <h3>K-04 &nbsp; 「ドメイン移管」と「DNS 管理移行」の違い</h3>
+
+        <div class="k-section">
+          <span class="k-section-label label-trigger">きっかけ</span>
+          <p>「DNS を Cloudflare に移す」と調べると「ドメイン移管」という言葉が出てきた。移管は複雑でリスクがあると聞き、本当にやる必要があるのか不安になった。</p>
+        </div>
+
+        <div class="k-section">
+          <span class="k-section-label">経緯</span>
+          <p>調査の結果、今回必要なのは「ドメイン移管（Transfer）」ではなく「DNS 管理移行（Connect a domain）」と判明。前者はレジストラ（所有権）ごと変更する大がかりな手続きだが、後者はネームサーバー（NS）レコードを変更するだけで完了する。</p>
+        </div>
+
+        <div class="k-section">
+          <span class="k-section-label label-result">結論</span>
+          <p>
+            <strong>ドメイン移管（Transfer）</strong>: 所有権ごと別レジストラへ。手続きが複雑・リスクあり。今回は不要。<br>
+            <strong>DNS 管理移行（Connect a domain）</strong>: 所有権はそのまま、DNS 管理のみ Cloudflare へ委譲。NS レコードを変更するだけ。今回はこちらを採用。
+          </p>
+        </div>
+
+        <div class="k-section">
+          <span class="k-section-label label-expert">Tips</span>
+          <p>「ドメイン移管と DNS 移行は全く別物。混同している人は多い。NS レコードを変えるだけなら30分以内に終わる作業。ただし既存の DNS レコード（MX・TXT 等）を事前に書き写しておかないと、メールが止まる事故になる。」</p>
+        </div>
+      </div>
+
+      <!-- K-05 -->
+      <div class="knowledge-card" id="K-05">
+        <h3>K-05 &nbsp; DNS 移行前のリスク評価（Google Workspace への影響）</h3>
+
+        <div class="k-section">
+          <span class="k-section-label label-trigger">きっかけ</span>
+          <p>DNS 管理を Cloudflare に移行する際、既存のメール設定（Google Workspace）に影響が出ないか心配だった。</p>
+        </div>
+
+        <div class="k-section">
+          <span class="k-section-label">経緯</span>
+          <p>移行前に PowerShell で現在の DNS レコードを確認した。</p>
+          <pre><code># MX レコード（メール受信）
+Resolve-DnsName -Name "your-domain.com" -Type MX
+
+# TXT レコード（SPF/DKIM 等）
+Resolve-DnsName -Name "your-domain.com" -Type TXT
+
+# A レコード（ウェブサイト）
+Resolve-DnsName -Name "your-domain.com" -Type A</code></pre>
+          <p>確認の結果、MX レコードが存在せず、SPF レコードも <code>-all</code>（全拒否）だったため、メールシステムへの影響はないと判断。</p>
+        </div>
+
+        <div class="k-section">
+          <span class="k-section-label label-result">結論</span>
+          <p>DNS 移行前に必ず MX・TXT（SPF/DKIM/DMARC）・A レコードを確認する。今回は影響なしと判断し安全に移行を実施。Cloudflare 側でも既存レコードを手動で再登録することで継続性を担保する。</p>
+        </div>
+
+        <div class="k-section">
+          <span class="k-section-label label-expert">Tips</span>
+          <p>「DNS 移行で一番怖いのはメールが止まること。MX レコードと SPF/DKIM を移行先に正しく設定できているか、移行後 24〜48 時間は監視するのが基本。今回はそもそもメール設定がなかったので問題なかったが、本番環境では必ずチェックリストを作って臨むこと。」</p>
+        </div>
+      </div>
+
+      <!-- K-06 -->
+      <div class="knowledge-card" id="K-06">
+        <h3>K-06 &nbsp; Public Hostname 設定が必要な理由</h3>
+
+        <div class="k-section">
+          <span class="k-section-label label-trigger">きっかけ</span>
+          <p>Named Tunnel を作成してトークンを取得したのに、<code>api.your-domain.com</code> にアクセスしてもタイムアウトになった。Tunnel は動いているのに、なぜリクエストが届かないのか分からなかった。</p>
+        </div>
+
+        <div class="k-section">
+          <span class="k-section-label">経緯</span>
+          <p>Cloudflare ダッシュボードの Tunnel 設定を確認すると、「Public Hostname」タブに何も設定されていなかった。Named Tunnel は「どのホスト名のリクエストをどのローカルサービスに転送するか」をダッシュボードで明示的に設定する必要がある。</p>
+        </div>
+
+        <div class="k-section">
+          <span class="k-section-label label-result">結論</span>
+          <p>Named Tunnel を使う場合、以下の2つがセットで必要：</p>
+          <ol>
+            <li>Cloudflare ダッシュボード → Zero Trust → Networks → Tunnels → 対象 Tunnel → Public Hostname タブ → ホスト名（<code>api.your-domain.com</code>）と転送先（<code>http://api:8000</code>）を設定</li>
+            <li><code>docker-compose.yml</code> の <code>cloudflared</code> コマンドから <code>--url</code> を削除し <code>--token</code> のみにする</li>
+          </ol>
+        </div>
+
+        <div class="k-section">
+          <span class="k-section-label label-expert">Tips</span>
+          <p>「Named Tunnel は『トンネルを掘る』部分と『どこに繋ぐか』の設定が分離している。トークンはトンネルを確立するだけ。どのドメインのリクエストをどのサービスに流すかは、ダッシュボードの Public Hostname で設定する。この2段階を理解しないと永遠にハマる。」</p>
+        </div>
+      </div>
+
+      <!-- K-07 -->
+      <div class="knowledge-card" id="K-07">
+        <h3>K-07 &nbsp; 修正後のデータ転送フロー全体像</h3>
+
+        <div class="k-section">
+          <span class="k-section-label label-trigger">きっかけ</span>
+          <p>全ての設定が完了した後、リクエストがどのように流れているのか全体像を整理したかった。</p>
+        </div>
+
+        <div class="k-section">
+          <span class="k-section-label label-result">結論（修正後の正しいフロー）</span>
+          <pre><code>【ユーザー（ブラウザ / curl）】
+    │  https://api.your-domain.com/ping にアクセス
+    ▼
+【Cloudflare DNS（Layer 3）】
+    │  api.your-domain.com → Cloudflare エッジ IP に解決
+    ▼
+【Cloudflare エッジサーバー】
+    │  Public Hostname 設定に基づき your-tunnel-name にルーティング
+    ▼
+【cloudflared コンテナ（Raspberry Pi 上）】
+    │  トンネル経由でリクエストを受信
+    │  http://api:8000 へ転送（Docker 内部ネットワーク）
+    ▼
+【FastAPI コンテナ（api:8000）】
+    │  {"message":"pong"} を生成して返却
+    ▼
+【ユーザー】  ← レスポンス受信</code></pre>
+        </div>
+
+        <div class="k-section">
+          <span class="k-section-label label-expert">Tips</span>
+          <p>「このフローを頭に入れておくと、どこで詰まっているかを素早く特定できる。DNS 解決の問題か、Tunnel 接続の問題か、Public Hostname 設定の問題か、FastAPI コンテナの問題か——それぞれ確認ポイントが違う。フローを書き出すことが障害対応の第一歩。」</p>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</body>
+</html>

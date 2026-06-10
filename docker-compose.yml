@@ -1,0 +1,19 @@
+services:
+  api:
+    build: ./app
+    container_name: poc-api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app/data:/data
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    # CLOUDFLARE_TUNNEL_TOKEN は .env ファイルまたは環境変数で設定してください
+    # Cloudflare ダッシュボード → Zero Trust → Networks → Tunnels → トークンをコピー
+    command: tunnel --no-autoupdate run --token "${CLOUDFLARE_TUNNEL_TOKEN}"
+    restart: unless-stopped
+    depends_on:
+      - api

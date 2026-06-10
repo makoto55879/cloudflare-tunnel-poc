@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>トップ | PoC ナレッジサイト</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <div class="layout">
+    <nav class="sidebar">
+      <div class="site-title">PoC ナレッジサイト</div>
+      <p class="project-name">Raspberry Pi 5 × Cloudflare Tunnel PoC</p>
+        <div class="nav-section-label">概要</div>
+        <ul>
+          <li><a href="index.html" class="active">トップ</a></li>
+        </ul>
+        <div class="nav-section-label">レポート・設計</div>
+        <ul>
+          <li><a href="poc-report.html">PoC 結果レポート（Phase 1）</a></li>
+          <li><a href="design-phase1-4.html">基本・詳細設計書（Phase 1-4）</a></li>
+        </ul>
+        <div class="nav-section-label">ナレッジ資料</div>
+        <ul>
+          <li><a href="knowledge-phase1-4.html">Phase 1-4 ナレッジ</a></li>
+          <li><a href="robustness.html">堅牢性強化システム構成案</a></li>
+        </ul>
+        <div class="nav-section-label">インフラ・運用</div>
+        <ul>
+          <li><a href="network-routes.html">システム通信経路一覧と図解</a></li>
+          <li><a href="dns-migration.html">DNS 移管手順書</a></li>
+        </ul>
+        <div class="nav-section-label">ログ</div>
+        <ul>
+          <li><a href="dev-log.html">開発ログ</a></li>
+        </ul>
+    </nav>
+    <main class="content">
+      <div class="doc-meta">更新日: 2026-05-04 &nbsp;|&nbsp; Phase 1（1-1 〜 1-4）完了</div>
+      <h1 class="page-title">PoC ナレッジサイト</h1>
+
+      <p>
+        本サイトは <strong>Raspberry Pi 5 × Cloudflare Tunnel PoC</strong> プロジェクトの
+        ナレッジ資料・設計書・手順書を一元管理するドキュメントサイトです。
+        Phase 1（1-1〜1-4）が完了し、現在は Phase 2（要件定義準備）を進行中です。
+      </p>
+
+      <div class="note">
+        <strong>Phase 1 完了:</strong>
+        <code>https://api.your-domain.com/ping</code> → <code>{"message":"pong"}</code> の疎通確認済み。
+        Named Tunnel + Cloudflare DNS 移管により本番用ドメインでの公開を達成。
+      </div>
+
+      <h2>資料一覧</h2>
+      <div class="doc-cards">
+        <div class="doc-card">
+          <span class="card-tag tag-report">レポート</span>
+          <a href="poc-report.html">PoC 結果レポート（Phase 1）</a>
+          <p>Phase 1 全体（1-1〜1-4）のPoC結果・達成事項・課題まとめ</p>
+        </div>
+        <div class="doc-card">
+          <span class="card-tag tag-design">設計書</span>
+          <a href="design-phase1-4.html">基本・詳細設計書（Phase 1-4）</a>
+          <p>Named Tunnel 設定問題解決・Cloudflare DNS 移管の基本・詳細設計</p>
+        </div>
+        <div class="doc-card">
+          <span class="card-tag tag-knowledge">ナレッジ</span>
+          <a href="knowledge-phase1-4.html">Phase 1-4 ナレッジ資料</a>
+          <p>Named Tunnel 設定・DNS 移管の知見・トラブルシューティング集</p>
+        </div>
+        <div class="doc-card">
+          <span class="card-tag tag-robust">構成案</span>
+          <a href="robustness.html">堅牢性強化システム構成案</a>
+          <p>本番運用に向けた堅牢性強化要素の構成案と「なぜ必要か」完全解説</p>
+        </div>
+        <div class="doc-card">
+          <span class="card-tag tag-design">設計書</span>
+          <a href="network-routes.html">システム通信経路一覧と図解</a>
+          <p>全通信経路（同一PC内通信含む）の一覧表とASCIIアート図解</p>
+        </div>
+        <div class="doc-card">
+          <span class="card-tag tag-runbook">手順書</span>
+          <a href="dns-migration.html">DNS 移管手順書（Squarespace → Cloudflare）</a>
+          <p>SquarespaceからCloudflareへのDNS移管手順書（スクリーンショット付き）</p>
+        </div>
+        <div class="doc-card">
+          <span class="card-tag tag-log">開発ログ</span>
+          <a href="dev-log.html">開発ログ</a>
+          <p>Phase 1-1〜1-4 の設計方針変更・協議経緯・実装進捗を時系列で記録した開発ログ</p>
+        </div>
+      </div>
+
+      <h2>システム概要</h2>
+      <table>
+        <thead>
+          <tr><th>コンポーネント</th><th>内容</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>ハードウェア</td><td>Raspberry Pi 5</td></tr>
+          <tr><td>サーバー</td><td>FastAPI（Docker コンテナ、ポート 8000）</td></tr>
+          <tr><td>トンネル</td><td>Cloudflare Named Tunnel（cloudflared コンテナ）</td></tr>
+          <tr><td>ドメイン</td><td>your-domain.com（Cloudflare DNS 管理）</td></tr>
+          <tr><td>DNS</td><td>xxxx.ns.cloudflare.com / yyyy.ns.cloudflare.com</td></tr>
+          <tr><td>Public Hostname</td><td>api.your-domain.com → http://api:8000</td></tr>
+          <tr><td>Tunnel ID</td><td><code>716ae640-c39a-4fd0-b41b-a4b63d7a6b0b</code></td></tr>
+        </tbody>
+      </table>
+
+      <h2>Phase 進捗</h2>
+      <table>
+        <thead>
+          <tr><th>Phase</th><th>内容</th><th>状態</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Phase 1-1</td><td>Raspberry Pi 基礎環境構築</td><td class="status-done">完了</td></tr>
+          <tr><td>Phase 1-2</td><td>Cloudflare Tunnel 外部公開検証</td><td class="status-done">完了</td></tr>
+          <tr><td>Phase 1-3</td><td>データアップロード安定性検証</td><td class="status-done">完了</td></tr>
+          <tr><td>Phase 1-4</td><td>本番用ドメイン適用検証（Named Tunnel + DNS 移管）</td><td class="status-done">完了</td></tr>
+          <tr><td>Phase 2</td><td>要件定義準備</td><td class="status-active">進行中</td></tr>
+        </tbody>
+      </table>
+
+      <h2>次のアクション</h2>
+      <div class="note">
+        Phase 2 として、開発者打ち合わせに向けた要件定義準備を進めています。
+        詳細は <a href="poc-report.html">PoC 結果レポート</a> および
+        <a href="robustness.html">堅牢性強化システム構成案</a> を参照してください。
+      </div>
+    </main>
+  </div>
+</body>
+</html>

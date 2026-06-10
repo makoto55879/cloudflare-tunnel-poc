@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>堅牢性強化システム構成案 | PoC ナレッジサイト</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <div class="layout">
+    <nav class="sidebar">
+      <div class="site-title">PoC ナレッジサイト</div>
+      <p class="project-name">Raspberry Pi 5 × Cloudflare Tunnel PoC</p>
+        <div class="nav-section-label">概要</div>
+        <ul>
+          <li><a href="index.html">トップ</a></li>
+        </ul>
+        <div class="nav-section-label">レポート・設計</div>
+        <ul>
+          <li><a href="poc-report.html">PoC 結果レポート（Phase 1）</a></li>
+          <li><a href="design-phase1-4.html">基本・詳細設計書（Phase 1-4）</a></li>
+        </ul>
+        <div class="nav-section-label">ナレッジ資料</div>
+        <ul>
+          <li><a href="knowledge-phase1-4.html">Phase 1-4 ナレッジ</a></li>
+          <li><a href="robustness.html" class="active">堅牢性強化システム構成案</a></li>
+        </ul>
+        <div class="nav-section-label">インフラ・運用</div>
+        <ul>
+          <li><a href="network-routes.html">システム通信経路一覧と図解</a></li>
+          <li><a href="dns-migration.html">DNS 移管手順書</a></li>
+        </ul>
+        <div class="nav-section-label">ログ</div>
+        <ul>
+          <li><a href="dev-log.html">開発ログ</a></li>
+        </ul>
+    </nav>
+    <main class="content">
+      <div class="doc-meta">版数: 1.0 &nbsp;|&nbsp; 更新日: 2026-05-04</div>
+      <h1 class="page-title">堅牢性強化システム構成案</h1>
+      <div class="related-links">
+        <strong>関連資料</strong>
+        <a href="poc-report.html">PoC 結果レポート</a> &nbsp;|&nbsp; <a href="network-routes.html">システム通信経路一覧と図解</a>
+      </div>
+
+      <h1 id="_1">堅牢性強化システム構成案（デファクトスタンダード準拠）</h1>
+<p>現在のPoC（概念実証）構成は、「通信を安全に貫通させること」に特化しています。これを実際の商用アプリや、エラーに強く堅牢な「デファクトスタンダード（業界標準）」の構成に引き上げるために必要な追加要素を整理しました。</p>
+<hr>
+<h2 id="1-to-be">1. 堅牢性強化アーキテクチャ図解（To-Beモデル）</h2>
+<p>現在の構成（As-Is）に対して、<strong>[追加]</strong> と記載されたコンポーネントが、堅牢性・信頼性を高めるために必要な要素です。</p>
+<pre><code class="language-text">【外部ネットワーク】                                  【Cloudflare】                                  【ローカルネットワーク（Raspberry Pi 5 内部）】
+                                                                                                  ┌───────────────────────────────────────────────┐
+                                                                                                  │ Docker Engine                                 │
+┌──────────────┐                                                                                  │                                               │
+│ iPhone アプリ │                                                                                  │  ┌─────────────────┐                          │
+│              │                                                                                  │  │ cloudflared     │                          │
+│ [追加]       │                                                                                  │  │ コンテナ        │                          │
+│ ・リトライ処理│                                                                                  │  └───────┬─────────┘                          │
+│ ・ローカルDB  │                                                                                  │          │                                │
+│ ・認証トークン│                                                                                  │          │ HTTP (TCP 8000)                │
+└──────┬───────┘                                                                                  │          ▼                                │
+       │                                                                                          │  ┌─────────────────┐                          │
+       │ HTTPS (TCP 443)                                                                          │  │ [追加] Nginx /  │ リバースプロキシ             │
+       │                                                                                          │  │ Traefik         │ (負荷分散・レート制限)       │
+       ▼                                                                                          │  └───────┬─────────┘                          │
+┌──────────────┐      QUIC / HTTP/2 (UDP/TCP)             ┌─────────────────┐                     │          │                                │
+│ Cloudflare   │◀─────────────────────────────────────────│ Cloudflare      │                     │          │ HTTP                           │
+│ エッジサーバー│                                          │ エッジサーバー  │                     │          ▼                                │
+│              │                                          └─────────────────┘                     │  ┌─────────────────┐                          │
+│ [追加]       │                                                                                  │  │ FastAPI         │ アプリケーション本体         │
+│ ・WAF        │                                                                                  │  │ コンテナ        │ (認証・バリデーション)       │
+│ ・DDoS防御   │                                                                                  │  └───────┬────┬────┘                          │
+└──────────────┘                                                                                  │          │    │                           │
+                                                                                                  │          │    │ [追加] TCP 5432 / 6379    │
+                                                                                                  │          │    ▼                           │
+                                                                                                  │          │  ┌─────────────────┐           │
+                                                                                                  │          │  │ [追加] DB       │ PostgreSQL/ │
+                                                                                                  │          │  │ コンテナ        │ MySQL/Redis │
+                                                                                                  │          │  └─────────────────┘           │
+                                                                                                  │          ▼                                │
+                                                                                                  │  ┌─────────────────┐                          │
+                                                                                                  │  │ ホストOS        │ ファイルストレージ           │
+                                                                                                  │  │ (Ubuntu Server) │                          │
+                                                                                                  │  └─────────────────┘                          │
+                                                                                                  └───────────────────────────────────────────────┘
+</code></pre>
+<hr>
+<h2 id="2">2. 追加すべき構成要素と役割（一覧表）</h2>
+<p>システムを「クライアント（iPhone）」「エッジ（Cloudflare）」「サーバー（Raspberry Pi）」の3層に分け、それぞれに追加すべき要素を整理しました。</p>
+<h3 id="21-iphone">2.1. クライアント層（iPhoneアプリ）の強化</h3>
+<p>モバイル回線は「切れること」を前提に設計する必要があります。</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">追加要素</th>
+<th style="text-align: left;">役割・目的</th>
+<th style="text-align: left;">デファクトスタンダードな実装例</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>自動リトライ機構</strong></td>
+<td style="text-align: left;">通信エラー時（トンネル通過失敗、電波断など）に、自動で再送信を行う。</td>
+<td style="text-align: left;">Exponential Backoff（指数関数的バックオフ）アルゴリズムの採用。</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>ローカルキュー（DB）</strong></td>
+<td style="text-align: left;">オフライン時に送信データを一時保存し、オンライン復帰時にバックグラウンドで送信する。</td>
+<td style="text-align: left;">SQLite, Realm, CoreData などのローカルDB活用。</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>認証トークン管理</strong></td>
+<td style="text-align: left;">毎回ID/パスワードを送るのではなく、安全なトークン（鍵）で通信する。</td>
+<td style="text-align: left;">JWT（JSON Web Token）や OAuth 2.0 の導入。</td>
+</tr>
+</tbody>
+</table>
+<h3 id="22-cloudflare">2.2. エッジ層（Cloudflare）の強化</h3>
+<p>Cloudflareの強力な機能を活用し、Raspberry Piに悪意のある通信が届く前にブロックします。</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">追加要素</th>
+<th style="text-align: left;">役割・目的</th>
+<th style="text-align: left;">デファクトスタンダードな実装例</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>WAF（Web Application Firewall）</strong></td>
+<td style="text-align: left;">SQLインジェクションやクロスサイトスクリプティングなどのサイバー攻撃を検知・遮断する。</td>
+<td style="text-align: left;">Cloudflare WAFの有効化（無料プランでも一部利用可能）。</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>レート制限（Rate Limiting）</strong></td>
+<td style="text-align: left;">短時間に大量のリクエスト（DoS攻撃や総当たり攻撃）が来た場合に、通信を制限する。</td>
+<td style="text-align: left;">CloudflareのRate Limitingルールの設定。</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Bot対策</strong></td>
+<td style="text-align: left;">悪意のある自動プログラム（Bot）からのアクセスを排除する。</td>
+<td style="text-align: left;">Cloudflare Bot Fight Modeの有効化。</td>
+</tr>
+</tbody>
+</table>
+<h3 id="23-raspberry-pi">2.3. サーバー層（Raspberry Pi内部）の強化</h3>
+<p>FastAPIが直接リクエストを受けるのではなく、間にクッションを挟み、データ管理を堅牢にします。</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">追加要素</th>
+<th style="text-align: left;">役割・目的</th>
+<th style="text-align: left;">デファクトスタンダードな実装例</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>リバースプロキシ</strong></td>
+<td style="text-align: left;">FastAPIの前に立ち、通信の交通整理、ログ出力、レート制限の二重化を行う。</td>
+<td style="text-align: left;">Nginx, Traefik, Caddy などのコンテナ追加。</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>データベース（RDBMS）</strong></td>
+<td style="text-align: left;">データを単なるファイルではなく、検索・集計・バックアップが容易な形式で安全に管理する。</td>
+<td style="text-align: left;">PostgreSQL, MySQL などのDBコンテナ追加。</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>入力バリデーション</strong></td>
+<td style="text-align: left;">アプリから送られてきたデータが正しい形式か（不正な文字が含まれていないか）を厳密にチェックする。</td>
+<td style="text-align: left;">FastAPIの <code>Pydantic</code> モデルを活用した厳格な型定義。</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>構造化ロギング</strong></td>
+<td style="text-align: left;">エラー発生時に「いつ・誰が・何をして・どうなったか」を後から追跡できるようにする。</td>
+<td style="text-align: left;">JSON形式でのログ出力と、ログローテーションの設定。</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="3">3. 次のステップ（要件定義への組み込み）</h2>
+<p>これらの要素をすべて最初から実装すると開発コストが膨大になります。<br>
+そのため、開発者との打ち合わせでは、<strong>「今回のアプリの目的に対して、どの堅牢性強化要素を優先して実装するか」</strong>を決定することが重要です。</p>
+<p><strong>優先度の考え方（例）：</strong><br>
+*   <strong>必須（高）：</strong> 入力バリデーション、認証トークン、自動リトライ機構<br>
+*   <strong>推奨（中）：</strong> データベース導入、WAF有効化<br>
+*   <strong>将来拡張（低）：</strong> リバースプロキシ、ローカルキュー</p>
+<hr>
+<h2 id="4">4. 堅牢性強化要素：「なぜ必要か」完全解説</h2>
+<p>現在のシステムの弱点（誰でもアクセス可能、通信断でデータ消失、サーバーダウンに気づけない、悪意のあるリクエストをそのまま受け入れる）を克服するため、各要素がどのような場面で役立つかを解説します。</p>
+<h3 id="41">4.1. 入力バリデーション（優先度：必須）</h3>
+<p><strong>どんな場面で役立つか</strong></p>
+<pre><code class="language-text">【悪意のある攻撃者の場合】
+攻撃者: POST /upload
+        Content: ../../../../etc/passwd  ← サーバーの設定ファイルを上書き
+
+バリデーションなし → サーバーが壊れる
+バリデーションあり → 「ファイル名に / は使えません」と弾く ✅
+
+【うっかりミスの場合】
+自分のアプリ: 誤って1GBのファイルを送信してしまう
+
+バリデーションなし → サーバーのディスクが満杯になる
+バリデーションあり → 「100MB以上は受け付けません」と弾く ✅
+</code></pre>
+<p><strong>一言で言うと：</strong> 「おかしなデータを入口で弾く門番」</p>
+<h3 id="42">4.2. 認証トークン（優先度：必須）</h3>
+<p><strong>どんな場面で役立つか</strong></p>
+<pre><code class="language-text">【認証なしの場合】
+誰でも: curl -X POST https://api.your-domain.com/upload -F &quot;file=@virus.exe&quot;
+→ 誰でもファイルを送れてしまう ❌
+
+【認証ありの場合】
+自分のアプリ: Authorization: Bearer eyJhbGciOi...（トークン）
+→ トークンを持っている人だけがアクセスできる ✅
+
+悪意のある人: トークンを知らないのでアクセス不可 ✅
+</code></pre>
+<p><strong>一言で言うと：</strong> 「鍵を持っている人だけが入れるドアロック」</p>
+<h3 id="43">4.3. 自動リトライ（優先度：必須）</h3>
+<p><strong>どんな場面で役立つか</strong></p>
+<pre><code class="language-text">【スマホの電波が弱い場所での場合】
+電車の中でトンネルに入る
+→ 通信が一瞬切れる
+→ ファイル送信が失敗する
+
+自動リトライなし → 「送信失敗」とエラー表示。ユーザーが手動で再送 ❌
+自動リトライあり → 電波が回復したら自動で再送。ユーザーは気づかない ✅
+</code></pre>
+<p><strong>一言で言うと：</strong> 「送れなかったら自動で何度でも再挑戦する仕組み」</p>
+<h3 id="44-wafweb-application-firewall">4.4. WAF（Web Application Firewall）（優先度：推奨）</h3>
+<p><strong>どんな場面で役立つか</strong></p>
+<pre><code class="language-text">【SQLインジェクション攻撃の場合】
+攻撃者: POST /upload
+        filename: &quot;'; DROP TABLE files; --&quot;
+→ データベースの中身を全部消そうとする攻撃
+
+WAFなし → FastAPIが受け取ってしまう可能性あり ❌
+WAFあり → Cloudflareが「これは攻撃パターンだ」と判断して弾く ✅
+
+【大量リクエスト攻撃（DDoS）の場合】
+攻撃者: 1秒間に10,000回 /upload にアクセス
+→ サーバーが過負荷で落ちる
+
+WAFなし → Raspberry Piが落ちる ❌
+WAFあり → Cloudflareが「1IPから異常な数のリクエストだ」と弾く ✅
+</code></pre>
+<p><strong>一言で言うと：</strong> 「既知の攻撃パターンを自動で検知してブロックするセキュリティゲート」</p>
+<p><strong>Cloudflare無料プランでの対応範囲</strong><br>
+無料プランでも基本的なDDoS保護とBot対策は利用可能です。ただし、「既知の攻撃パターン（SQLインジェクション等）を自動でブロックするOWASPルール」は有料プラン（Pro $20/月〜）が必要です。PoC段階では無料プランで十分であり、本番運用時に改めて検討します。</p>
+<h3 id="45">4.5. データベース導入（優先度：推奨）</h3>
+<p><strong>どんな場面で役立つか</strong></p>
+<pre><code class="language-text">【現在の状態】
+ファイルを受け取る → ディスクに保存するだけ
+→ 「いつ誰が何を送ったか」の記録がない
+
+【データベースありの場合】
+ファイルを受け取る → DBに記録（送信者・日時・ファイル名・サイズ・状態）
+                  → ディスクに保存
+
+できるようになること:
+  ✅ 「昨日送ったファイルを確認したい」→ 一覧表示できる
+  ✅ 「送信が成功したか確認したい」→ ステータスで確認できる
+  ✅ 「重複して送ってしまった」→ 重複チェックができる
+</code></pre>
+<p><strong>一言で言うと：</strong> 「送受信の台帳・履歴管理」</p>
+<h3 id="46">4.6. 構造化ロギング（優先度：推奨）</h3>
+<p><strong>どんな場面で役立つか</strong></p>
+<pre><code class="language-text">【ログなしの場合】
+「昨日の夜、ファイル送信が失敗した気がする」
+→ 確認する方法がない ❌
+
+【ログありの場合】
+2026-05-04 23:15:32 | ERROR | upload | user=iPhone | file=photo.jpg | 
+  reason=&quot;ファイルサイズ超過&quot; | size=150MB
+→ いつ・誰が・何を・なぜ失敗したか一目でわかる ✅
+
+「最近アクセスが増えた気がする」
+→ ログを見れば1日何件のリクエストがあるか分かる ✅
+</code></pre>
+<p><strong>一言で言うと：</strong> 「システムの行動記録・ブラックボックスレコーダー」</p>
+<h3 id="47">4.7. ローカルキュー（優先度：将来拡張）</h3>
+<p><strong>どんな場面で役立つか</strong></p>
+<pre><code class="language-text">【地下鉄・トンネル・電波の悪い場所での場合】
+スマホが圏外になる
+→ ファイルを送ろうとしても送れない
+
+ローカルキューなし → 「送信失敗」。ユーザーが電波のある場所で再操作 ❌
+
+ローカルキューあり:
+  1. 圏外でも「送信ボタン」を押せる
+  2. スマホ内のDBに「送信待ち」として保存
+  3. 電波が回復したら自動で送信
+  4. ユーザーは何もしなくていい ✅
+</code></pre>
+<p><strong>一言で言うと：</strong> 「電波がなくても操作できる、後で自動送信する仕組み」</p>
+<h3 id="48">4.8. リバースプロキシ（優先度：将来拡張）</h3>
+<p><strong>どんな場面で役立つか</strong></p>
+<pre><code class="language-text">【将来、APIが複数になった場合】
+
+現在: cloudflared → FastAPI（1つ）
+
+将来:
+  /upload → ファイル受信サーバー（FastAPI）
+  /notify → 通知サーバー（別のコンテナ）
+  /auth   → 認証サーバー（別のコンテナ）
+
+リバースプロキシなし → cloudflaredを複数立てる必要がある ❌
+リバースプロキシあり → 1つの入口で振り分けられる ✅
+</code></pre>
+<p><strong>一言で言うと：</strong> 「複数のサービスへの交通整理係」</p>
+    </main>
+  </div>
+</body>
+</html>

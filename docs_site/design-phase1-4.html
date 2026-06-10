@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>基本・詳細設計書（Phase 1-4） | PoC ナレッジサイト</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <div class="layout">
+    <nav class="sidebar">
+      <div class="site-title">PoC ナレッジサイト</div>
+      <p class="project-name">Raspberry Pi 5 × Cloudflare Tunnel PoC</p>
+        <div class="nav-section-label">概要</div>
+        <ul>
+          <li><a href="index.html">トップ</a></li>
+        </ul>
+        <div class="nav-section-label">レポート・設計</div>
+        <ul>
+          <li><a href="poc-report.html">PoC 結果レポート（Phase 1）</a></li>
+          <li><a href="design-phase1-4.html" class="active">基本・詳細設計書（Phase 1-4）</a></li>
+        </ul>
+        <div class="nav-section-label">ナレッジ資料</div>
+        <ul>
+          <li><a href="knowledge-phase1-4.html">Phase 1-4 ナレッジ</a></li>
+          <li><a href="robustness.html">堅牢性強化システム構成案</a></li>
+        </ul>
+        <div class="nav-section-label">インフラ・運用</div>
+        <ul>
+          <li><a href="network-routes.html">システム通信経路一覧と図解</a></li>
+          <li><a href="dns-migration.html">DNS 移管手順書</a></li>
+        </ul>
+        <div class="nav-section-label">ログ</div>
+        <ul>
+          <li><a href="dev-log.html">開発ログ</a></li>
+        </ul>
+    </nav>
+    <main class="content">
+      <div class="doc-meta">版数: 1.0 &nbsp;|&nbsp; 更新日: 2026-05-04</div>
+      <h1 class="page-title">基本・詳細設計書（Phase 1-4）</h1>
+      <div class="related-links">
+        <strong>関連資料</strong>
+        <a href="poc-report.html">PoC 結果レポート</a> &nbsp;|&nbsp; <a href="knowledge-phase1-4.html">Phase 1-4 ナレッジ</a> &nbsp;|&nbsp; <a href="dns-migration.html">DNS 移管手順書</a>
+      </div>
+
+      <h1 id="phase-1-4-named-tunnel">基本設計書・詳細設計書（Phase 1-4: Named Tunnel設定問題解決）</h1>
+<h2 id="1">1. 目的</h2>
+<p>Phase 1-4におけるCloudflare Named Tunnelの接続タイムアウト問題（<code>ERR_CONNECTION_TIMED_OUT</code>）を解決し、外部ドメイン（Squarespace管理）を用いた安定的なトンネル接続を確立する。</p>
+<h2 id="2">2. システム構成変更点</h2>
+<ul>
+<li><strong>DNS管理</strong>: Squarespace（実体はGoogle Cloud DNS）からCloudflare DNSへ移行（ドメイン所有権はSquarespaceのまま維持）</li>
+<li><strong>Tunnelルーティング</strong>: <code>docker-compose.yml</code>のコマンド引数から、Cloudflareダッシュボード上のPublic Hostname設定へ移行</li>
+<li><strong>cloudflared設定</strong>: <code>--url</code>オプションを廃止し、Named Tunnelの標準的なルーティング方式に準拠</li>
+</ul>
+<h2 id="3">3. 詳細設計（パラメータシート）</h2>
+<h3 id="31-dnscloudflare-dns">3.1. DNS設定（Cloudflare DNS）</h3>
+<table>
+<thead>
+<tr>
+<th>パラメータ名</th>
+<th>設定値</th>
+<th>備考</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ドメイン名</td>
+<td><code>your-domain.com</code></td>
+<td>Squarespaceで取得・更新管理（Layer 2）</td>
+</tr>
+<tr>
+<td>ネームサーバー1</td>
+<td><code>xxxx.ns.cloudflare.com</code></td>
+<td>Squarespace管理画面で設定（Layer 3をCloudflareへ委譲）</td>
+</tr>
+<tr>
+<td>ネームサーバー2</td>
+<td><code>yyyy.ns.cloudflare.com</code></td>
+<td>Squarespace管理画面で設定</td>
+</tr>
+<tr>
+<td>プロキシステータス</td>
+<td>Proxied (オレンジの雲)</td>
+<td>CloudflareのCDN/WAFを有効化</td>
+</tr>
+</tbody>
+</table>
+<h3 id="32-cloudflare-tunnel-public-hostname">3.2. Cloudflare Tunnel (Public Hostname) 設定</h3>
+<table>
+<thead>
+<tr>
+<th>パラメータ名</th>
+<th>設定値</th>
+<th>備考</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Tunnel名</td>
+<td><code>your-tunnel-name</code></td>
+<td></td>
+</tr>
+<tr>
+<td>Subdomain</td>
+<td><code>api</code></td>
+<td></td>
+</tr>
+<tr>
+<td>Domain</td>
+<td><code>your-domain.com</code></td>
+<td>Cloudflare DNS管理移行により選択可能に</td>
+</tr>
+<tr>
+<td>Service Type</td>
+<td><code>HTTP</code></td>
+<td></td>
+</tr>
+<tr>
+<td>Service URL</td>
+<td><code>http://api:8000</code></td>
+<td>FastAPIコンテナへのルーティング（プロトコル指定必須）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="33-docker-compose-docker-composeyml">3.3. Docker Compose 設定 (<code>docker-compose.yml</code>)</h3>
+<table>
+<thead>
+<tr>
+<th>サービス名</th>
+<th>パラメータ名</th>
+<th>設定値</th>
+<th>備考</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cloudflared</code></td>
+<td><code>command</code></td>
+<td><code>tunnel --no-autoupdate run --token &lt;YOUR-TOKEN&gt;</code></td>
+<td><code>--url</code>オプションを削除し、トークンのみで起動</td>
+</tr>
+</tbody>
+</table>
+<h2 id="4">4. 移行時の影響評価</h2>
+<ul>
+<li><strong>Squarespaceウェブサイト</strong>: AレコードおよびCNAMEレコードがCloudflareに自動引き継ぎされたため、影響なし。</li>
+<li><strong>Google Workspace (メール)</strong>: 事前調査によりMXレコードが存在せず、SPFレコードも <code>-all</code>（全拒否）であったため、メール送受信への影響はなしと判断。</li>
+<li><strong>Google所有権確認</strong>: TXTレコードが正常に引き継がれたため影響なし。</li>
+</ul>
+    </main>
+  </div>
+</body>
+</html>

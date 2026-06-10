@@ -1,0 +1,19 @@
+# 環境変数（トークン等を含むため必ずgit管理外にする）
+.env
+
+# アップロードされたデータファイル
+app/data/
+
+# Python キャッシュ
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# macOS
+.DS_Store
+
+# エディタ
+.vscode/
+.idea/

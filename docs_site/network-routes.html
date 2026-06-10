@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>システム通信経路一覧と図解 | PoC ナレッジサイト</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <div class="layout">
+    <nav class="sidebar">
+      <div class="site-title">PoC ナレッジサイト</div>
+      <p class="project-name">Raspberry Pi 5 × Cloudflare Tunnel PoC</p>
+        <div class="nav-section-label">概要</div>
+        <ul>
+          <li><a href="index.html">トップ</a></li>
+        </ul>
+        <div class="nav-section-label">レポート・設計</div>
+        <ul>
+          <li><a href="poc-report.html">PoC 結果レポート（Phase 1）</a></li>
+          <li><a href="design-phase1-4.html">基本・詳細設計書（Phase 1-4）</a></li>
+        </ul>
+        <div class="nav-section-label">ナレッジ資料</div>
+        <ul>
+          <li><a href="knowledge-phase1-4.html">Phase 1-4 ナレッジ</a></li>
+          <li><a href="robustness.html">堅牢性強化システム構成案</a></li>
+        </ul>
+        <div class="nav-section-label">インフラ・運用</div>
+        <ul>
+          <li><a href="network-routes.html" class="active">システム通信経路一覧と図解</a></li>
+          <li><a href="dns-migration.html">DNS 移管手順書</a></li>
+        </ul>
+        <div class="nav-section-label">ログ</div>
+        <ul>
+          <li><a href="dev-log.html">開発ログ</a></li>
+        </ul>
+    </nav>
+    <main class="content">
+      <div class="doc-meta">版数: 1.0 &nbsp;|&nbsp; 更新日: 2026-05-04</div>
+      <h1 class="page-title">システム通信経路一覧と図解</h1>
+      <div class="related-links">
+        <strong>関連資料</strong>
+        <a href="poc-report.html">PoC 結果レポート</a> &nbsp;|&nbsp; <a href="knowledge-phase1-4.html">Phase 1-4 ナレッジ</a> &nbsp;|&nbsp; <a href="robustness.html">堅牢性強化システム構成案</a>
+      </div>
+
+      <h1 id="phase-1">システム通信経路一覧と図解（Phase 1 完了時点）</h1>
+<p>本資料は、iPhoneアプリからRaspberry Pi上のFastAPIサーバーに至るまでの、<strong>システム全体の通信経路（ネットワーキングの種別）</strong>を網羅的に整理したものです。</p>
+<p>同一PC（Raspberry Pi）内部のコンテナ間通信も含め、どの通信がどのような役割とプロトコルを持っているかを明確にすることで、今後の要件定義やセキュリティ設計の基礎とします。</p>
+<hr>
+<h2 id="1">1. システム全体アーキテクチャ図解</h2>
+<p>左側（クライアント）から右側（サーバー内部）へ向かって、リクエストがどのように流れていくかを示した図です。</p>
+<pre><code class="language-text">【外部ネットワーク】                                  【Cloudflare】                                  【ローカルネットワーク（Raspberry Pi 5 内部）】
+                                                                                                  ┌───────────────────────────────────────────────┐
+                                                                                                  │ Docker Engine                                 │
+┌──────────────┐                                                                                  │                                               │
+│ iPhone アプリ │                                                                                  │  ┌─────────────────┐                          │
+│ (クライアント) │                                                                                  │  │ cloudflared     │                          │
+└──────┬───────┘                                                                                  │  │ コンテナ        │                          │
+       │                                                                                          │  └───────┬─────────┘                          │
+       │ 通信①: HTTPS (TCP 443)                                                                   │          │                                │
+       │ リクエスト送信                                                                           │          │ 通信③: HTTP (TCP 8000)         │
+       │                                                                                          │          │ リクエスト転送                 │
+       ▼                                                                                          │          ▼                                │
+┌──────────────┐      通信②: QUIC / HTTP/2 (UDP/TCP)      ┌─────────────────┐                     │  ┌─────────────────┐                          │
+│ Cloudflare   │◀─────────────────────────────────────────│ Cloudflare      │                     │  │ FastAPI         │                          │
+│ エッジサーバー│   アウトバウンド・トンネル接続 (維持)    │ エッジサーバー  │                     │  │ コンテナ        │                          │
+└──────────────┘                                          └─────────────────┘                     │  └───────┬─────────┘                          │
+       ▲                                                                                          │          │                                │
+       │                                                                                          │          │ 通信④: UNIX Domain Socket /    │
+       │                                                                                          │          │        ローカルファイルI/O     │
+       │                                                                                          │          ▼                                │
+       │                                                                                          │  ┌─────────────────┐                          │
+       └──────────────────────────────────────────────────────────────────────────────────────────┼──▶ ホストOS        │                          │
+                                                                                                  │  │ (Ubuntu Server) │                          │
+                                                                                                  │  └─────────────────┘                          │
+                                                                                                  └───────────────────────────────────────────────┘
+</code></pre>
+<hr>
+<h2 id="2">2. 通信経路（ネットワーキング種別）一覧表</h2>
+<p>図解に示した「通信①〜④」の詳細な仕様と役割を整理した表です。</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">通信ID</th>
+<th style="text-align: left;">通信区間</th>
+<th style="text-align: left;">プロトコル</th>
+<th style="text-align: left;">ポート</th>
+<th style="text-align: left;">役割・特徴</th>
+<th style="text-align: left;">セキュリティ・暗号化</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>通信①</strong></td>
+<td style="text-align: left;">iPhoneアプリ<br>↓<br>Cloudflareエッジ</td>
+<td style="text-align: left;">HTTPS</td>
+<td style="text-align: left;">TCP 443</td>
+<td style="text-align: left;">クライアントからのAPIリクエスト（<code>/ping</code>, <code>/upload</code> など）。モバイル回線やWi-Fiなど、不安定な経路を通る。</td>
+<td style="text-align: left;">Cloudflareが提供するSSL/TLS証明書により暗号化。</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>通信②</strong></td>
+<td style="text-align: left;">cloudflaredコンテナ<br>↓<br>Cloudflareエッジ</td>
+<td style="text-align: left;">QUIC / HTTP/2</td>
+<td style="text-align: left;">UDP/TCP 7844等</td>
+<td style="text-align: left;"><strong>アウトバウンド接続</strong>。Raspberry Pi側からCloudflareへ常に接続を張り続けるトンネル。これによりインバウンドポート開放が不要になる。</td>
+<td style="text-align: left;">Cloudflare Tunnelの仕組みにより強力に暗号化。</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>通信③</strong></td>
+<td style="text-align: left;">cloudflaredコンテナ<br>↓<br>FastAPIコンテナ</td>
+<td style="text-align: left;">HTTP</td>
+<td style="text-align: left;">TCP 8000</td>
+<td style="text-align: left;">Docker内部ネットワーク（<code>poc-api_default</code> 等）での通信。Cloudflareで終端されたリクエストをFastAPIへ転送する。</td>
+<td style="text-align: left;">同一ホスト内の仮想ネットワーク通信のため、暗号化なし（平文）。外部からは傍受不可。</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>通信④</strong></td>
+<td style="text-align: left;">FastAPIコンテナ<br>↓<br>ホストOS（ファイルシステム）</td>
+<td style="text-align: left;">ローカルI/O</td>
+<td style="text-align: left;">なし</td>
+<td style="text-align: left;">アップロードされたデータを、Dockerのボリュームマウント機能を使ってRaspberry PiのSDカード/SSDに書き込む処理。</td>
+<td style="text-align: left;">OSのファイルシステム権限に依存。</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="3-api">3. 要件定義に向けた整理（API通信の種別）</h2>
+<p>上記の「通信①（iPhone → Cloudflare）」の中身（ペイロード）として、<strong>具体的にどのようなデータのやり取り（API）が必要か</strong>を整理するのが、次の「要件定義」のステップです。</p>
+<p>現時点での実装済みAPIと、今後想定されるAPIの種別は以下の通りです。</p>
+<h3 id="31-phase-1">3.1. 実装済みの通信（Phase 1）</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">API種別</th>
+<th style="text-align: left;">エンドポイント</th>
+<th style="text-align: left;">メソッド</th>
+<th style="text-align: left;">目的</th>
+<th style="text-align: left;">データサイズ</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>疎通確認</strong></td>
+<td style="text-align: left;"><code>/ping</code></td>
+<td style="text-align: left;">GET</td>
+<td style="text-align: left;">サーバーが生きているか、トンネルが繋がっているかの確認。</td>
+<td style="text-align: left;">極小（数バイト）</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>データ送信</strong></td>
+<td style="text-align: left;"><code>/upload</code></td>
+<td style="text-align: left;">POST</td>
+<td style="text-align: left;">10MBのダミーファイルをサーバーに送信し、保存する。</td>
+<td style="text-align: left;">大（10MB〜）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="32-phase-2">3.2. 今後必要になる可能性が高い通信（Phase 2以降の検討事項）</h3>
+<p>アプリの目的（写真共有、センサーデータ収集、チャットなど）に応じて、以下のようなどの通信が必要かを開発者と打ち合わせて決定します。</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">API種別（想定）</th>
+<th style="text-align: left;">エンドポイント例</th>
+<th style="text-align: left;">メソッド</th>
+<th style="text-align: left;">目的</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>認証・認可</strong></td>
+<td style="text-align: left;"><code>/login</code>, <code>/token</code></td>
+<td style="text-align: left;">POST</td>
+<td style="text-align: left;">誰がアクセスしているかを確認し、不正アクセスを防ぐ。</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>データ取得</strong></td>
+<td style="text-align: left;"><code>/data</code>, <code>/images</code></td>
+<td style="text-align: left;">GET</td>
+<td style="text-align: left;">サーバーに保存されている過去のデータや一覧をiPhoneに表示する。</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>データ削除</strong></td>
+<td style="text-align: left;"><code>/data/{id}</code></td>
+<td style="text-align: left;">DELETE</td>
+<td style="text-align: left;">不要になったデータをサーバーから削除する。</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>状態更新</strong></td>
+<td style="text-align: left;"><code>/status</code></td>
+<td style="text-align: left;">PUT/PATCH</td>
+<td style="text-align: left;">データの状態（既読、処理完了など）を更新する。</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="4">4. まとめ</h2>
+<ul>
+<li>ネットワークの物理的・論理的な経路（通信①〜④）は、Phase 1の検証により<strong>安全かつ安定して確立されている</strong>ことが証明されました。</li>
+<li>次のステップでは、この確立された経路（通信①）の上に乗せる<strong>「中身のデータ（API種別）」をどうするか</strong>を、アプリの目的に合わせて定義していくことになります。</li>
+</ul>
+    </main>
+  </div>
+</body>
+</html>

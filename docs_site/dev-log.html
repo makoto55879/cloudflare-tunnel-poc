@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>開発ログ | PoC ナレッジサイト</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <div class="layout">
+    <nav class="sidebar">
+      <div class="site-title">PoC ナレッジサイト</div>
+      <p class="project-name">Raspberry Pi 5 × Cloudflare Tunnel PoC</p>
+      <div class="nav-section-label">概要</div>
+      <ul>
+        <li><a href="index.html">トップ</a></li>
+      </ul>
+      <div class="nav-section-label">レポート・設計</div>
+      <ul>
+        <li><a href="poc-report.html">PoC 結果レポート（Phase 1）</a></li>
+        <li><a href="design-phase1-4.html">基本・詳細設計書（Phase 1-4）</a></li>
+      </ul>
+      <div class="nav-section-label">ナレッジ資料</div>
+      <ul>
+        <li><a href="knowledge-phase1-4.html">Phase 1-4 ナレッジ</a></li>
+        <li><a href="robustness.html">堅牢性強化システム構成案</a></li>
+      </ul>
+      <div class="nav-section-label">インフラ・運用</div>
+      <ul>
+        <li><a href="network-routes.html">システム通信経路一覧と図解</a></li>
+        <li><a href="dns-migration.html">DNS 移管手順書</a></li>
+      </ul>
+      <div class="nav-section-label">ログ</div>
+      <ul>
+        <li><a href="dev-log.html" class="active">開発ログ</a></li>
+      </ul>
+    </nav>
+
+    <main class="content">
+      <div class="doc-meta">版数: 1.3 &nbsp;|&nbsp; 更新日: 2026-06-10 &nbsp;|&nbsp; 対象: WBS 1.1 / MS-1 + Git 運用</div>
+      <h1 class="page-title">開発ログ</h1>
+
+      <p>
+        本ページは「いつ・何を実施したか」の時系列ログです。各ナレッジ資料（<a href="knowledge-phase1-4.html">Phase 1-4 ナレッジ</a>等）が「なぜそうなったか・どう調べて解決したか」を中心に記述するのに対し、本ページは<strong>意思決定の経緯・方針変更の背景・試行錯誤のプロセス</strong>を時系列で追えるよう記録します。
+      </p>
+      <p>
+        設計理解・エラー解決の詳細は各ナレッジ資料に集約しています。本ログの各エントリ末尾には、関連するナレッジ項目へのリンクを記載しています。
+      </p>
+
+      <div class="related-links">
+        <strong>関連資料</strong>
+        <a href="poc-report.html">PoC 結果レポート</a> &nbsp;|&nbsp;
+        <a href="knowledge-phase1-4.html">Phase 1-4 ナレッジ</a> &nbsp;|&nbsp;
+        <a href="dns-migration.html">DNS 移管手順書</a> &nbsp;|&nbsp;
+        <a href="network-routes.html">システム通信経路一覧と図解</a>
+      </div>
+
+      <!-- ===== 1. 現在地サマリー ===== -->
+      <h2>1. 現在地サマリー（2026-06-10 時点）</h2>
+      <table>
+        <thead>
+          <tr><th>区分</th><th>状態</th><th>備考</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Phase 1-1 Raspberry Pi 基礎環境構築</td>
+            <td class="status-done">完了</td>
+            <td>Docker / FastAPI コンテナ起動、ローカル疎通確認済み</td>
+          </tr>
+          <tr>
+            <td>Phase 1-2 Cloudflare Tunnel 外部公開検証</td>
+            <td class="status-done">完了</td>
+            <td>Quick Tunnel 経由で Wi-Fi・モバイル回線から疎通確認済み</td>
+          </tr>
+          <tr>
+            <td>Phase 1-3 データアップロード安定性検証</td>
+            <td class="status-done">完了</td>
+            <td>10MB ファイルのアップロード・MD5 整合性確認済み</td>
+          </tr>
+          <tr>
+            <td>Phase 1-4 本番用ドメイン適用検証</td>
+            <td class="status-done">完了</td>
+            <td><code>https://api.your-domain.com/ping</code> → <code>{"message":"pong"}</code> 確認済み</td>
+          </tr>
+          <tr>
+            <td>Phase 2 要件定義準備</td>
+            <td class="status-active">進行中</td>
+            <td>PoC 結果レポート・堅牢性強化構成案・DNS 移管手順書・ドキュメントサイト作成済み</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- ===== 2. 方針変更・決定事項一覧 ===== -->
+      <h2>2. 方針変更・決定事項一覧</h2>
+      <table>
+        <thead>
+          <tr><th>日付</th><th>変更内容</th><th>理由・背景</th><th>影響資料</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>2026-03-下旬</td>
+            <td>Raspberry Pi 5 を API サーバーとして採用</td>
+            <td>低コストで常時稼働可能なサーバー基盤として適切。グローバル IP 不要・ポート開放不要という要件にも合致</td>
+            <td><a href="poc-report.html">PoC レポート</a></td>
+          </tr>
+          <tr>
+            <td>2026-04-01</td>
+            <td>Phase 1-2 では Named Tunnel でなく <strong>Quick Tunnel</strong> を使用</td>
+            <td>Named Tunnel の Public Hostname 設定にはドメインが Cloudflare DNS ゾーンで管理されていることが前提。当時はドメインが Squarespace 管理下で Cloudflare DNS 未登録のため設定不可。Phase 1-2 の目的は「外部から繋がるか確認する」であり URL 固定は不要と判断</td>
+            <td><a href="poc-report.html">PoC レポート</a>、<a href="knowledge-phase1-4.html">K-01</a></td>
+          </tr>
+          <tr>
+            <td>2026-04-12</td>
+            <td>FastAPI の保存先パスを <code>/data/uploads</code> から <code>/app/data</code> に変更</td>
+            <td>Docker ボリュームマウント先（<code>/app/data</code>）と <code>main.py</code> の保存先（<code>/data/uploads</code>）が不一致。アップロードしたファイルが Pi 上で見つからない事象が発生し、パスを統一して解決</td>
+            <td><a href="poc-report.html">PoC レポート 3.3</a></td>
+          </tr>
+          <tr>
+            <td>2026-04-29</td>
+            <td>DNS 管理を Squarespace（Google Cloud DNS）から <strong>Cloudflare</strong> へ移行</td>
+            <td>Named Tunnel の Public Hostname 機能を使うには Cloudflare DNS ゾーンへの登録が必須。「ドメイン移管（Transfer）」ではなく「DNS 管理移行（Connect a domain）」であり、所有権は Squarespace のまま NS レコードを変更するだけと判明。事前確認で MX レコードなし・SPF が <code>-all</code> のためメールへの影響なしと判断し実施</td>
+            <td><a href="dns-migration.html">DNS 移管手順書</a>、<a href="knowledge-phase1-4.html">K-03, K-04, K-05</a></td>
+          </tr>
+          <tr>
+            <td>2026-04-29</td>
+            <td>cloudflared の起動オプションから <code>--url</code> を削除し <code>--token</code> のみに統一</td>
+            <td>Named Tunnel（<code>--token</code>）と Quick Tunnel（<code>--url</code>）を同時指定していたため、転送先が未定義となりタイムアウトが発生。Named Tunnel では転送先は Cloudflare ダッシュボードの Public Hostname 設定で管理されるため <code>--url</code> は不要かつ競合の原因だった</td>
+            <td><a href="knowledge-phase1-4.html">K-02, K-06</a>、<a href="design-phase1-4.html">設計書 Phase 1-4</a></td>
+          </tr>
+          <tr>
+            <td>2026-05-04</td>
+            <td>Phase 2 として堅牢性強化構成案・ドキュメントサイト整備を優先</td>
+            <td>開発者打ち合わせに向けた要件定義準備のため。Phase 1 の知見を整理・共有可能な形にすることを優先</td>
+            <td><a href="robustness.html">堅牢性強化構成案</a></td>
+          </tr>
+          <tr>
+            <td>2026-06-10</td>
+            <td>ドキュメントサイトを GitHub Pages + Cloudflare Access で公開</td>
+            <td>開発者・関係者への資料共有のため。特定メールアドレスのみアクセス可能な形で公開。機密情報（ドメイン名・IP・Zone ID 等）は HTML から一括マスク処理し、git 履歴も orphan ブランチで書き換えて公開</td>
+            <td>本ドキュメントサイト</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- ===== 3. 時系列ログ ===== -->
+      <h2>3. 時系列ログ</h2>
+
+      <!-- Phase 1-1 -->
+      <div class="log-entry">
+        <h3>Phase 1-1 着手：Raspberry Pi 5 セットアップ</h3>
+        <div class="log-meta">
+          <span class="log-type log-type-progress">進捗</span>
+          2026年3月下旬
+        </div>
+        <p>
+          Raspberry Pi 5 に Ubuntu Server をインストールし、Docker / Docker Compose を導入。
+          FastAPI コンテナを起動し、<code>http://localhost:8000/ping</code> → <code>{"message":"pong"}</code> を確認。
+          Windows PC からローカルネットワーク越しの疎通も確認。
+        </p>
+        <table>
+          <thead>
+            <tr><th>検証項目</th><th>結果</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Ubuntu Server インストール</td><td class="status-done">成功</td></tr>
+            <tr><td>Docker / Docker Compose インストール</td><td class="status-done">成功</td></tr>
+            <tr><td>FastAPI コンテナ起動・ローカル疎通</td><td class="status-done">成功</td></tr>
+            <tr><td>Windows PC からのローカルネットワーク越し疎通</td><td class="status-done">成功</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="log-entry">
+        <h3>課題: Docker コマンドに sudo が必要</h3>
+        <div class="log-meta">
+          <span class="log-type log-type-issue">課題・対応</span>
+          2026年3月下旬
+        </div>
+        <p>
+          <strong>事象:</strong> <code>docker ps</code> 等の実行時に <code>permission denied while trying to connect to the Docker daemon socket</code> が発生。
+        </p>
+        <p>
+          <strong>原因:</strong> 実行ユーザー（<code>damio01</code>）が <code>docker</code> グループに未所属。Docker デーモンのソケットはデフォルトで <code>docker</code> グループのみアクセス可能。
+        </p>
+        <p>
+          <strong>対応:</strong> <code>sudo usermod -aG docker damio01</code> を実行し、再ログイン後に解消。以降 <code>sudo</code> なしで <code>docker</code> コマンドが使用可能になった。
+        </p>
+      </div>
+
+      <div class="log-entry">
+        <h3>課題: SSH 接続時のユーザー名誤り・パーミッション不備</h3>
+        <div class="log-meta">
+          <span class="log-type log-type-issue">課題・対応</span>
+          2026年3月下旬
+        </div>
+        <p>
+          <strong>事象 1:</strong> SSH 接続時に <code>damio</code> で接続試行 → <code>Permission denied (publickey)</code>。正しいユーザー名は <code>damio01</code>。
+        </p>
+        <p>
+          <strong>事象 2:</strong> ユーザー名修正後も SSH キー認証が失敗。<code>~/.ssh</code> ディレクトリのパーミッションが <code>755</code> になっており、OpenSSH のセキュリティポリシー（<code>700</code> 以外は拒否）に抵触していた。
+        </p>
+        <p>
+          <strong>対応:</strong> <code>chmod 700 ~/.ssh</code> および <code>chmod 600 ~/.ssh/authorized_keys</code> で修正。
+        </p>
+      </div>
+
+      <div class="log-entry">
+        <h3>Phase 1-1 完了</h3>
+        <div class="log-meta">
+          <span class="log-type log-type-progress">進捗</span>
+          2026年3月下旬
+        </div>
+        <p>
+          Raspberry Pi 5 上で FastAPI コンテナが稼働し、Windows PC からローカルネットワーク越しに疎通確認完了。
+          Phase 1-2（Cloudflare Tunnel 外部公開検証）へ移行。
+        </p>
+      </div>
+
+      <!-- Phase 1-2 -->
+      <div class="log-entry">
+        <h3>Phase 1-2 着手：Cloudflare Tunnel 外部公開検証</h3>
+        <div class="log-meta">
+          <span class="log-type log-type-progress">進捗</span>
+          2026-04-01
+        </div>
+        <p>
+          cloudflared コンテナを使った外部公開を試みる。当初は Named Tunnel（<code>--token</code>）の使用を検討したが、
+          ドメインが Cloudflare DNS ゾーンに未登録のため Public Hostname 設定が不可と判明。
+          <strong>Quick Tunnel（<code>--url</code> オプション）で代替することを決定。</strong>
+        </p>
+      </div>
+
+      <div class="log-entry">
+        <h3>意思決定: Quick Tunnel を採用した理由</h3>
+        <div class="log-meta">
+          <span class="log-type log-type-decision">協議・決定</span>
+          2026-04-01
+        </div>
+        <p>
+          <strong>背景:</strong> Phase 1-2 の目標は「外部ネットワークから Raspberry Pi の API に到達できるか確認する」こと。
+          URL の固定は必須要件ではなかった。
+        </p>
+        <p>
+          <strong>Named Tunnel を使えなかった理由:</strong>
+          Named Tunnel の「Public Hostname」設定（どのドメインのリクエストをどのサービスに転送するか）は、
+          対象ドメインが <strong>Cloudflare の DNS ゾーンで管理されている</strong>場合のみ利用可能。
+          当時はドメイン（<code>your-domain.com</code>）の DNS 管理が Squarespace（実体は Google Cloud DNS）にあり、
+          Cloudflare ダッシュボードで Public Hostname を設定しようとしてもドメインが選択肢に表示されなかった。
+        </p>
+        <p>
+          <strong>Quick Tunnel の特性と割り切り:</strong>
+          Quick Tunnel（<code>cloudflared tunnel --url http://localhost:8000</code>）は Cloudflare アカウントやドメイン登録不要で即使えるが、
+          コンテナ再起動のたびに URL が変わる（例: <code>occur-thompson-theorem-bracket.trycloudflare.com</code>）。
+          Phase 1-2 は「繋がるか確認する」フェーズなので URL 変動は許容し、Quick Tunnel で実施することを決定。
+          Named Tunnel への移行は Phase 1-4 で対応する計画とした。
+        </p>
+        <p>詳細: <a href="knowledge-phase1-4.html#K-01">K-01 Named Tunnel と Quick Tunnel の違い</a></p>
+      </div>
+
+      <div class="log-entry">
+        <h3>Phase 1-2 完了：Quick Tunnel 経由の外部疎通確認</h3>
+        <div class="log-meta">
+          <span class="log-type log-type-progress">進捗</span>
+          2026-04-01
+        </div>
+        <p>
+          Quick Tunnel URL: <code>https://occur-thompson-theorem-bracket.trycloudflare.com</code>
+        </p>
+        <ul>
+          <li>Wi-Fi 環境からの疎通: <code>/ping</code> → <code>{"message":"pong"}</code> ✅</li>
+          <li>モバイル回線（iPhone テザリング）からの疎通 ✅</li>
+          <li>Cloudflare エッジ接続プロトコル: QUIC（東京リージョン）</li>
+        </ul>
+        <p>
+          <strong>重要な発見:</strong> Quick Tunnel はコンテナ再起動のたびに URL が変わる仕様を実際に確認。
+          継続的なテスト・本番運用には Named Tunnel が必須であることを改めて認識。
+          Phase 1-4 での Named Tunnel 移行を確定方針とした。
+        </p>
+      </div>
+
+      <!-- Phase 1-3 -->
+      <div class="log-entry">
+        <h3>Phase 1-3 着手：データアップロード安定性検証</h3>
+        <div class="log-meta">
+          <span class="log-type log-type-progress">進捗</span>
+          2026-04-12
+        </div>
+        <p>
+          10MB のダミーファイルを作成し、Quick Tunnel 経由でアップロードして安定性を検証。
+          Windows PowerShell から <code>curl.exe</code> を使用（PowerShell では <code>curl</code> が <code>Invoke-WebRequest</code> のエイリアスになっているため <code>curl.exe</code> と明示する必要あり）。
+        </p>
+        <pre><code># Windows PowerShell でダミーファイル作成
+fsutil file createnew dummy_10mb.dat 10485760
+
+# curl でアップロード（PowerShell では curl.exe と明示）
+curl.exe -X POST https://occur-thompson-theorem-bracket.trycloudflare.com/upload `
+  -F "file=@dummy_10mb.dat"</code></pre>
+      </div>
+
+      <div class="log-entry">
+        <h3>課題: FastAPI の保存先パスと Docker ボリュームマウント先の不一致</h3>
+        <div class="log-meta">
+          <span class="log-type log-type-issue">課題・対応</span>
+          2026-04-12
+        </div>
+        <p>
+          <strong>事象:</strong> ファイルアップロードは成功（HTTP 200）するが、Raspberry Pi 上で <code>ls -lh ~/poc-api/data/</code> を確認してもファイルが存在しない。
+        </p>
+        <p>
+          <strong>原因:</strong> <code>main.py</code> の保存先が <code>/data/uploads</code> に設定されていたが、
+          <code>docker-compose.yml</code> のボリュームマウント定義は <code>./data:/app/data</code>（コンテナ内 <code>/app/data</code> をホストの <code>./data</code> にマウント）。
+          ファイルはコンテナ内の <code>/data/uploads</code> に書き込まれていたが、このパスはマウントされていないためホスト側には反映されていなかった。
+        </p>
+        <p>
+          <strong>対応:</strong> <code>main.py</code> の保存先を <code>/app/data</code> に修正し、
+          <code>docker compose up -d --build</code> で再ビルドして解決。
+        </p>
+        <pre><code># 修正前（main.py）
+UPLOAD_DIR = "/data/uploads"
+
+# 修正後（main.py）
+UPLOAD_DIR = "/app/data"</code></pre>
+      </div>
+
+      <div class="log-entry">
+        <h3>Phase 1-3 完了：10MB アップロード・MD5 整合性確認</h3>
+        <div class="log-meta">
+          <span class="log-type log-type-progress">進捗</span>
+          2026-04-12
+        </div>
+        <ul>
+          <li>10MB ファイルのアップロード成功 ✅</li>
+          <li>Raspberry Pi 側でのファイル保存確認（<code>ls -lh ~/poc-api/data/</code>）✅</li>
+          <li>MD5 ハッシュ値による整合性確認（送信前後で一致）✅</li>
+        </ul>
+        <table>
+          <thead>
+            <tr><th>制限項目</th><th>制限値</th><th>検証結果</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>最大アップロードサイズ</td><td>100MB（Free プラン）</td><td>10MB で問題なし</td></tr>
+            <tr><td>タイムアウト</td><td>100秒</td><td>10MB では問題なし</td></tr>
+          </tbody>
+        </table>
+        <p>
+          <strong>注:</strong> 50MB 以上のファイルテストは Phase 2 以降に持ち越し。
+          Cloudflare Free プランの 100MB 制限に対して余裕があることを確認。
+        </p>
+      </div>
+
+      <!-- Phase 1-4 -->
+      <div class="log-entry">
+        <h3>Phase 1-4 着手：Named Tunnel への移行と本番ドメイン適用</h3>
+        <div class="log-meta">
+          <span class="log-type log-type-progress">進捗</span>
+          2026-04-29
+        </div>
+        <p>
+          Quick Tunnel から Named Tunnel に移行し、固定ドメイン（<code>api.your-domain.com</code>）での
+          HTTPS アクセスを確立することを目標とする。
+          Named Tunnel への移行には以下の2つの課題が存在することが判明した。
+        </p>
+        <ol>
+          <li>ドメインが Cloudflare DNS ゾーンに未登録 → DNS 管理を Cloudflare に移行する必要あり</li>
+          <li>既存の <code>docker-compose.yml</code> に <code>--url</code>（Quick Tunnel 用）が残っている → 削除が必要</li>
+        </ol>
+      </div>
+
+      <div class="log-entry">
+        <h3>意思決定: DNS 管理を Cloudflare に移行する判断プロセス</h3>
+        <div class="log-meta">
+          <span class="log-type log-type-decision">協議・決定</span>
+          2026-04-29
+        </div>
+        <p>
+          <strong>問題の発見:</strong>
+          Named Tunnel を作成してトークンを取得し、Cloudflare ダッシュボードで Public Hostname を設定しようとしたところ、
+          ドメイン（<code>your-domain.com</code>）が選択肢に表示されなかった。
+          Cloudflare アカウントは持っているのに、なぜドメインが使えないのかが分からなかった。
+        </p>
+        <p>
+          <strong>原因の特定:</strong>
+          調査の結果、Named Tunnel の Public Hostname 機能は「対象ドメインが Cloudflare の DNS ゾーンで管理されている」場合のみ利用可能と判明。
+          当時はドメインの所有権も DNS 管理も Squarespace（実体は Google Cloud DNS）にあり、
+          Cloudflare からは「管理外のドメイン」として扱われていた。
+        </p>
+        <p>
+          <strong>「ドメイン移管」と「DNS 管理移行」の違いの確認:</strong>
+          「DNS を Cloudflare に移す」と調べると「ドメイン移管（Transfer）」という言葉が出てきた。
+          移管は複雑でリスクがあると聞き、本当にやる必要があるのか不安になったが、
+          調査の結果、今回必要なのは「ドメイン移管（Transfer）」ではなく「DNS 管理移行（Connect a domain）」と判明。
+          前者はレジストラ（所有権）ごと変更する大がかりな手続きだが、後者は NS レコードを変更するだけで完了する。
+        </p>
+        <table>
+          <thead>
+            <tr><th>種別</th><th>内容</th><th>今回の判断</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>ドメイン移管（Transfer）</td>
+              <td>所有権ごと別レジストラへ移す。手続きが複雑・リスクあり</td>
+              <td>不要</td>
+            </tr>
+            <tr>
+              <td>DNS 管理移行（Connect a domain）</td>
+              <td>所有権はそのまま、NS レコードを変更して DNS 管理のみ Cloudflare へ委譲</td>
+              <td><strong>採用</strong></td>
+            </tr>
+          </tbody>
+        </table>
+        <p>詳細: <a href="knowledge-phase1-4.html#K-03">K-03 ドメイン管理の5層モデル</a>、<a href="knowledge-phase1-4.html#K-04">K-04 「ドメイン移管」と「DNS 管理移行」の違い</a></p>
+      </div>
+
+      <div class="log-entry">
+        <h3>DNS 移行前のリスク評価（Google Workspace への影響確認）</h3>
+        <div class="log-meta">
+          <span class="log-type log-type-decision">協議・決定</span>
+          2026-04-29
+        </div>
+        <p>
+          DNS 管理を Cloudflare に移行する前に、既存のメール設定（Google Workspace）に影響が出ないか確認した。
+          DNS 移行で一番怖いのは「メールが止まること」であるため、事前に現在の DNS レコードを調査した。
+        </p>
+        <pre><code># PowerShell で現在の DNS レコードを確認
+Resolve-DnsName -Name "your-domain.com" -Type MX   # メール受信設定
+Resolve-DnsName -Name "your-domain.com" -Type TXT  # SPF/DKIM/DMARC
+Resolve-DnsName -Name "your-domain.com" -Type A    # ウェブサイト</code></pre>
+        <p>
+          <strong>確認結果:</strong>
+        </p>
+        <ul>
+          <li>MX レコード: <strong>存在しない</strong>（メール受信設定なし）</li>
+          <li>SPF レコード: <code>v=spf1 -all</code>（全送信元を拒否 = メール送信も実質無効）</li>
+          <li>DMARC: <code>v=DMARC1; p=none</code>（ポリシーなし）</li>
+        </ul>
+        <p>
+          <strong>判断:</strong> MX レコードが存在せず、SPF が <code>-all</code>（全拒否）であったため、
+          Google Workspace メールへの影響なしと判断。安全に DNS 移行を実施できると結論。
+        </p>
+        <p>詳細: <a href="knowledge-phase1-4.html#K-05">K-05 DNS 移行前のリスク評価</a></p>
+      </div>
+
+      <div class="log-entry">
+        <h3>DNS 移管実施：Squarespace → Cloudflare</h3>
+        <div class="log-meta">
+          <span class="log-type log-type-change">環境変更</span>
+          2026-04-29 〜 2026-05-01
+        </div>
+        <p>
+          Cloudflare の「Connect a domain」機能を使って <code>your-domain.com</code> を登録。
+          Cloudflare が既存 DNS レコードを自動スキャンし、現在のレコードを取り込んだ。
+        </p>
+        <p>
+          <strong>注意が必要だった点:</strong>
+          自動スキャン後、不要なプレースホルダーレコード（<code>Tunnel api</code> 等）が混入していたため手動で削除。
+          既存の A レコード・TXT レコード（SPF/DKIM/DMARC）は Cloudflare 側に正しく引き継がれていることを確認した。
+        </p>
+        <p>
+          Squarespace の DNS 設定で NS レコードを Cloudflare のネームサーバーに変更。
+        </p>
+        <ul>
+          <li>変更後のネームサーバー: <code>xxxx.ns.cloudflare.com</code> / <code>yyyy.ns.cloudflare.com</code></li>
+          <li>DNS 伝播完了・Cloudflare でのアクティブ確認: 約 24〜48 時間後</li>
+        </ul>
+        <p>詳細手順（スクリーンショット付き）: <a href="dns-migration.html">DNS 移管手順書</a></p>
+      </div>
+
+      <div class="log-entry">
+        <h3>課題: --token と --url の同時指定によるタイムアウト</h3>
+        <div class="log-meta">
+          <span class="log-type log-type-issue">課題・対応</span>
+          2026-04-29
+        </div>
+        <p>
+          <strong>事象:</strong> DNS 移行後、Named Tunnel（<code>--token</code>）を設定したにもかかわらず、
+          <code>https://api.your-domain.com/ping</code> へのアクセスが <code>ERR_CONNECTION_TIMED_OUT</code> でタイムアウト。
+          Cloudflare ダッシュボードでは Tunnel は「Healthy」と表示されており、DNS 解決（CNAME）も正常。
+          なぜリクエストが届かないのか原因が分からなかった。
+        </p>
+        <p>
+          <strong>原因:</strong>
+          Phase 1-2 で Quick Tunnel 用に設定した <code>--url http://api:8000</code> が
+          <code>docker-compose.yml</code> に残ったまま、Named Tunnel 用の <code>--token</code> を追加していた。
+          Named Tunnel では転送先（どのローカルサービスにリクエストを流すか）は
+          Cloudflare ダッシュボードの「Public Hostname」設定で管理されるため、
+          <code>--url</code> は無視されるどころか競合の原因となり、転送先が未定義のままタイムアウトとなっていた。
+        </p>
+        <pre><code># 修正前（誤）：--token と --url を同時指定
+command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN} --url http://api:8000
+
+# 修正後（正）：--token のみ。転送先はダッシュボードの Public Hostname で設定
+command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}</code></pre>
+        <p>
+          <strong>対応:</strong> <code>--url http://api:8000</code> を削除し、
+          転送先は Cloudflare Zero Trust ダッシュボードの Public Hostname 設定で管理する形に統一。
+        </p>
+        <p>詳細: <a href="knowledge-phase1-4.html#K-02">K-02 --token と --url の競合によるタイムアウト</a></p>
+      </div>
+
+      <div class="log-entry">
+        <h3>Public Hostname 設定・Named Tunnel 疎通確認</h3>
+        <div class="log-meta">
+          <span class="log-type log-type-progress">進捗</span>
+          2026-05-01 〜 2026-05-04
+        </div>
+        <p>
+          Cloudflare Zero Trust ダッシュボードで Public Hostname を設定。
+          Named Tunnel は「トンネルを掘る（<code>--token</code>）」部分と「どこに繋ぐか（Public Hostname）」の設定が分離しており、
+          トークンだけではリクエストの転送先が定まらない。この2段階の設定が必要であることを理解した上で実施。
+        </p>
+        <table>
+          <thead>
+            <tr><th>設定項目</th><th>値</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Subdomain</td><td><code>api</code></td></tr>
+            <tr><td>Domain</td><td><code>your-domain.com</code></td></tr>
+            <tr><td>Service Type</td><td>HTTP</td></tr>
+            <tr><td>Service URL</td><td><code>http://api:8000</code>（<code>http://</code> プロトコル指定が必須）</td></tr>
+          </tbody>
+        </table>
+        <p>
+          <strong>注意点:</strong> Service URL の入力で <code>api:8000</code> のみでは
+          「Invalid format」エラーが発生。<code>http://api:8000</code> と明示的にプロトコルを指定する必要あり。
+        </p>
+        <p>詳細: <a href="knowledge-phase1-4.html#K-06">K-06 Public Hostname 設定が必要な理由</a></p>
+      </div>
+
+      <div class="log-entry">
+        <h3>Phase 1-4 完了：本番ドメインでの HTTPS 疎通確認</h3>
+        <div class="log-meta">
+          <span class="log-type log-type-progress">進捗</span>
+          2026-05-04
+        </div>
+        <p>
+          Named Tunnel（<code>your-tunnel-name</code>）が Healthy 状態（Uptime 6日以上、Active replicas 1）で稼働。
+          固定ドメインでの HTTPS アクセスを確認。
+        </p>
+        <pre><code>curl https://api.your-domain.com/ping
+# → {"message":"pong"} ✅</code></pre>
+        <p>
+          Phase 1 全4フェーズが完了。Phase 2（要件定義準備・ドキュメント整備）へ移行。
+          Quick Tunnel から Named Tunnel への移行に際して発生した課題（DNS 移行・<code>--url</code> 競合・Public Hostname 設定）は
+          すべて <a href="knowledge-phase1-4.html">Phase 1-4 ナレッジ</a> に整理した。
+        </p>
+      </div>
+
+      <!-- Phase 2 -->
+      <div class="log-entry">
+        <h3>Phase 2 着手：要件定義準備・ドキュメント整備</h3>
+        <div class="log-meta">
+          <span class="log-type log-type-progress">進捗</span>
+          2026-05-04 〜
+        </div>
+        <p>
+          開発者打ち合わせに向けた要件定義準備として、Phase 1 の知見を整理・共有可能な形にすることを優先。
+          以下のドキュメントを作成した。
+        </p>
+        <table>
+          <thead>
+            <tr><th>資料名</th><th>内容</th><th>状態</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><a href="poc-report.html">PoC 結果レポート（Phase 1）</a></td>
+              <td>Phase 1 全体の結果・達成事項・課題まとめ</td>
+              <td class="status-done">作成済み</td>
+            </tr>
+            <tr>
+              <td><a href="network-routes.html">システム通信経路一覧と図解</a></td>
+              <td>全通信経路の一覧表と ASCII アート図解</td>
+              <td class="status-done">作成済み</td>
+            </tr>
+            <tr>
+              <td><a href="robustness.html">堅牢性強化システム構成案</a></td>
+              <td>本番運用に向けた堅牢性強化要素と「なぜ必要か」解説</td>
+              <td class="status-done">作成済み</td>
+            </tr>
+            <tr>
+              <td><a href="dns-migration.html">DNS 移管手順書</a></td>
+              <td>Squarespace → Cloudflare の DNS 移管手順（スクリーンショット付き）</td>
+              <td class="status-done">作成済み</td>
+            </tr>
+            <tr>
+              <td>本ドキュメントサイト</td>
+              <td>全資料を一元管理する HTML ドキュメントサイト（相互リンク・インデックス付き）</td>
+              <td class="status-done">作成済み</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="log-entry">
+        <h3>ドキュメントサイトの GitHub 公開・機密情報マスク処理</h3>
+        <div class="log-meta">
+          <span class="log-type log-type-change">環境変更</span>
+          2026-06-10
+        </div>
+        <p>
+          作成したドキュメントサイトを GitHub Pages + Cloudflare Access で公開。
+          特定メールアドレスのみアクセス可能な形（Cloudflare Access のワンタイムコード認証）で運用。
+        </p>
+        <p>
+          <strong>公開前の機密情報マスク処理:</strong>
+          HTML ファイル内に直接記述されていた以下の情報を一括置換した。
+        </p>
+        <table>
+          <thead>
+            <tr><th>種別</th><th>置換前</th><th>置換後</th><th>箇所数</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>ドメイン名</td><td>実ドメイン名</td><td><code>your-domain.com</code></td><td>39箇所</td></tr>
+            <tr><td>IP アドレス</td><td>Cloudflare エッジ IP</td><td><code>xxx.xxx.xxx.xxx</code></td><td>2箇所</td></tr>
+            <tr><td>Tunnel 名</td><td>実 Tunnel 名</td><td><code>your-tunnel-name</code></td><td>7箇所</td></tr>
+            <tr><td>ネームサーバー名</td><td>アカウント固有の NS 名</td><td><code>xxxx.ns.cloudflare.com</code></td><td>8箇所</td></tr>
+          </tbody>
+        </table>
+        <p>
+          <strong>git 履歴の書き換え:</strong>
+          過去のコミット履歴にも機密情報が含まれていたため、orphan ブランチで履歴を完全に書き換え、
+          <code>initial commit</code> の1コミットのみの状態で force push した。
+          GitHub 上でコミット履歴をさかのぼっても機密情報が表示されないことを確認。
+        </p>
+      </div>
+
+      <div class="log-entry">
+        <h3>次の作業（Phase 2 続き）</h3>
+        <div class="log-meta">
+          <span class="log-type log-type-note">予定</span>
+          2026-06-10 〜
+        </div>
+        <ol>
+          <li>開発者打ち合わせアジェンダの作成</li>
+          <li>Phase 2 要件定義書の作成（API 仕様・認証方式・エラーハンドリング仕様）</li>
+          <li>50MB 以上のファイルアップロードテスト（Phase 1-3 の持ち越し）</li>
+          <li>iPhone アプリとの実際の接続テスト（E2E 検証）</li>
+          <li>FCM（プッシュ通知）導入要否の検討</li>
+          <li>認証・認可の実装（API キー認証または JWT 認証）</li>
+        </ol>
+      </div>
+
+      <!-- ===== 4. 実装済みコンポーネント一覧 ===== -->
+      <h2>4. 実装済みコンポーネント一覧</h2>
+      <table>
+        <thead>
+          <tr><th>コンポーネント</th><th>構成</th><th>状態</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>FastAPI（poc-api コンテナ）</td>
+            <td>Python 3.11-slim / uvicorn、ポート 8000</td>
+            <td class="status-done">稼働中（<code>restart: always</code>）</td>
+          </tr>
+          <tr>
+            <td>cloudflared（Named Tunnel）</td>
+            <td><code>cloudflare/cloudflared:latest</code>、<code>--token</code> 方式</td>
+            <td class="status-done">稼働中（Uptime 6日以上）</td>
+          </tr>
+          <tr>
+            <td>/ping エンドポイント</td>
+            <td><code>GET /ping</code> → <code>{"message":"pong"}</code></td>
+            <td class="status-done">確認済み</td>
+          </tr>
+          <tr>
+            <td>/upload エンドポイント</td>
+            <td><code>POST /upload</code>、ファイルを <code>/app/data</code> に保存</td>
+            <td class="status-done">10MB ファイルで確認済み</td>
+          </tr>
+          <tr>
+            <td>認証・認可</td>
+            <td>未実装</td>
+            <td class="status-planned">Phase 2 以降</td>
+          </tr>
+          <tr>
+            <td>自動リトライ</td>
+            <td>未実装</td>
+            <td class="status-planned">Phase 2 以降</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- ===== 5. 関連リソース ===== -->
+      <h2>5. 関連リソース</h2>
+      <table>
+        <thead>
+          <tr><th>種別</th><th>参照先</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>PoC 結果レポート</td>
+            <td><a href="poc-report.html">poc-report.html</a></td>
+          </tr>
+          <tr>
+            <td>Phase 1-4 ナレッジ資料</td>
+            <td><a href="knowledge-phase1-4.html">knowledge-phase1-4.html</a></td>
+          </tr>
+          <tr>
+            <td>基本・詳細設計書（Phase 1-4）</td>
+            <td><a href="design-phase1-4.html">design-phase1-4.html</a></td>
+          </tr>
+          <tr>
+            <td>DNS 移管手順書</td>
+            <td><a href="dns-migration.html">dns-migration.html</a></td>
+          </tr>
+          <tr>
+            <td>システム通信経路一覧と図解</td>
+            <td><a href="network-routes.html">network-routes.html</a></td>
+          </tr>
+          <tr>
+            <td>堅牢性強化システム構成案</td>
+            <td><a href="robustness.html">robustness.html</a></td>
+          </tr>
+          <tr>
+            <td>ガントチャート</td>
+            <td><code>poc_gantt_chart_20260504.xlsx</code>（Phase 1 全体、更新済み）</td>
+          </tr>
+        </tbody>
+      </table>
+
+    </main>
+  </div>
+</body>
+</html>
